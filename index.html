@@ -292,11 +292,15 @@ function PageAcerto({sessions}){
     L.push(`📊 *RESULTADO POR JOGADOR*`);
     posList.forEach(([n,pos])=>{
       const bv=(bountyPorEl[n]||[]).length*BOUNTY_VALUE;
+      const ganhouTotal=sess.ganhos?.[n]||0;
+      const poteVal=ganhouTotal-bv;
       const sl=sess.saldos?.[n]||0;
       const e=sl>0?"🟢":sl<0?"🔴":"⚪";
       L.push(`${pos}º _${n}_`);
-      L.push(`   Gasto: ${fmt(sess.gastos?.[n]||0)} | Ganhou: ${fmt(sess.ganhos?.[n]||0)}`);
-      if(bv>0)L.push(`   Bounty: ${fmt(bv)}`);
+      L.push(`   Gasto: *${fmt(sess.gastos?.[n]||0)}*`);
+      if(poteVal>0) L.push(`   Pote: ${fmt(poteVal)}`);
+      if(bv>0) L.push(`   Bounty (${(bountyPorEl[n]||[]).length} elim.): ${fmt(bv)}`);
+      if(ganhouTotal>0) L.push(`   Total recebido: *${fmt(ganhouTotal)}*`);
       L.push(`   Saldo: ${e} *${fmt(sl)}*`);
       L.push(``);
     });
