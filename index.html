@@ -247,7 +247,7 @@ function EditSession({sess,onSave,onCancel}){
 
   const present=sess.present;
   const posList=Object.entries(positions).sort((a,b)=>parseInt(a[1])-parseInt(b[1]));
-  const top3=posList.slice(0,3).map(([n])=>n;
+  const top3=posList.slice(0,3).map(([n])=>n);
   const posicoesPosTop3=posList.slice(3);
   const tP=present.reduce((s,p)=>s+(parseFloat(gastos[p])||0),0);
   const tB=Object.keys(bountys).length*BOUNTY_VALUE;
