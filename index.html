@@ -57,18 +57,16 @@ const SEED_SESSIONS = [
 ];
 const SEED_POTE = SEED_SESSIONS.reduce((s,x)=>s+x.poteFinalVal,0);
 
-// ── DATE HELPERS ─────────────────────────────────────────
-// ISO (YYYY-MM-DD) → BR (DD/MM/AAAA)
+// ── DATE HELPERS ──────────────────────────────────────────
 const fmtDate = d => {
   if(!d)return"";
-  if(d.includes("/"))return d; // já está em BR
+  if(d.includes("/"))return d;
   const [y,m,day]=d.split("-");
   return`${day}/${m}/${y}`;
 };
-// BR (DD/MM/AAAA) → ISO (YYYY-MM-DD)
 const toISO = d => {
   if(!d)return"";
-  if(d.includes("-"))return d; // já está em ISO
+  if(d.includes("-"))return d;
   const [day,m,y]=d.split("/");
   return`${y}-${m}-${day}`;
 };
@@ -122,16 +120,16 @@ function calcBalance(sessions,players){
   return Object.entries(d).map(([name,v])=>({name,...v}));
 }
 
-// ── RECALC SESSION ────────────────────────────────────────
+// ── RECALC SESSION ─────────────────────────────────────────
 function recalcSession(sess){
-  const {present,gastos,positions,bountys,acordoDetails}=sess;
+  const {present,gastos,positions,bountys,acordoDetails,gastoExtra}=sess;
   const posList=Object.entries(positions).sort((a,b)=>parseInt(a[1])-parseInt(b[1]));
   const top3=posList.slice(0,3).map(([n])=>n);
   const tP=present.reduce((s,p)=>s+(parseFloat(gastos[p])||0),0);
-  // bountys
-  const isNew=bountys&&Object.values(bountys).every(v=>typeof v==="string");
+  const isNew=bountys&&Object.keys(bountys).length>0&&Object.values(bountys).every(v=>typeof v==="string");
   const tB=isNew?Object.keys(bountys||{}).length*BOUNTY_VALUE:Object.values(bountys||{}).reduce((s,v)=>s+(parseInt(v)||0),0)*BOUNTY_VALUE;
-  const pL=tP-tB;
+  const tGE=parseFloat(gastoExtra?.valor||0);
+  const pL=tP-tB-tGE;
   const pFV=pL*POTE_FINAL_PERCENT;
   const pD=pL*(1-POTE_FINAL_PERCENT);
   const acordoTipo=acordoDetails?.tipo||"padrao";
@@ -139,17 +137,13 @@ function recalcSession(sess){
   const totalExtras=Object.values(extrasObj).reduce((s,v)=>s+parseFloat(v||0),0);
   const basePercent=acordoTipo==="divisao12"
     ?[{n:top3[0],v:pD*(POTE_PERCENT[0]+POTE_PERCENT[1])/2},{n:top3[1],v:pD*(POTE_PERCENT[0]+POTE_PERCENT[1])/2},{n:top3[2],v:pD*POTE_PERCENT[2]}]
-    :acordoTipo==="divisao123"
-    ?top3.map(n=>({n,v:pD/3}))
+    :acordoTipo==="divisao123"?top3.map(n=>({n,v:pD/3}))
     :top3.map((n,i)=>({n,v:pD*POTE_PERCENT[i]}));
   const tBase=basePercent.reduce((s,x)=>s+x.v,0);
   const g={};present.forEach(p=>g[p]=0);
-  // bounty ganhos
   if(isNew){Object.entries(bountys||{}).forEach(([,el])=>{g[el]=(g[el]||0)+BOUNTY_VALUE;});}
   else{Object.entries(bountys||{}).forEach(([el,qtd])=>{g[el]=(g[el]||0)+(parseInt(qtd)||0)*BOUNTY_VALUE;});}
-  // pote top3
   basePercent.forEach(({n,v})=>{if(!n)return;const desc=tBase>0?totalExtras*(v/tBase):0;g[n]=(g[n]||0)+v-desc;});
-  // extras
   Object.entries(extrasObj).forEach(([n,v])=>{if(parseFloat(v||0)>0)g[n]=(g[n]||0)+parseFloat(v);});
   const sl={};present.forEach(p=>{sl[p]=(g[p]||0)-(parseFloat(gastos[p])||0);});
   const regulares=present.filter(p=>p!=="Avulso");
@@ -157,13 +151,13 @@ function recalcSession(sess){
   const pts={};
   posList.filter(([n])=>n!=="Avulso").forEach(([n],i)=>{pts[n]=i<ptT.length?ptT[i]:0;});
   if(present.includes("Avulso"))pts["Avulso"]=0;
-  return{...sess,ganhos:g,saldos:sl,pts,poteFinalVal:pFV,totalPote:tP,totalBounty:tB,poteLiquido:pL,poteDistrib:pD};
+  return{...sess,ganhos:g,saldos:sl,pts,poteFinalVal:pFV,totalPote:tP,totalBounty:tB,gastoExtraTotal:tGE,poteLiquido:pL,poteDistrib:pD};
 }
 
-// ── BOUNTY HELPERS ────────────────────────────────────────
+// ── BOUNTY HELPERS ─────────────────────────────────────────
 function getBountyPorEl(bountys){
   const r={};if(!bountys)return r;
-  const isNew=Object.values(bountys).every(v=>typeof v==="string");
+  const isNew=Object.keys(bountys).length>0&&Object.values(bountys).every(v=>typeof v==="string");
   if(isNew){Object.entries(bountys).forEach(([eliminado,eliminador])=>{if(!r[eliminador])r[eliminador]=[];r[eliminador].push(eliminado);});}
   else{Object.entries(bountys).forEach(([eliminador,qtd])=>{r[eliminador]=Array(parseInt(qtd)||0).fill("?");});}
   return r;
@@ -193,64 +187,84 @@ function Spark({sessions,name}){
   return <svg width={w} height={h}><polyline points={points} fill="none" stroke="#000" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/></svg>;
 }
 
-// ── EDIT SESSION INLINE ───────────────────────────────────
-function EditSession({sess, onSave, onCancel}){
-  const [date, setDate] = useState(fmtDate(sess.date));
-  const [gastos, setGastos] = useState({...sess.gastos});
-  const [positions, setPositions] = useState({...sess.positions});
-  const [bountys, setBountys] = useState(()=>{
-    // normaliza para novo formato {eliminado: eliminador}
+// ── GASTO EXTRA WIDGET ─────────────────────────────────────
+function GastoExtraWidget({gastoExtra, onChange}){
+  // gastoExtra = null | {confirmado: bool, descricao: string, valor: number}
+  if(!gastoExtra){
+    return(
+      <div>
+        <div style={{fontSize:12,fontWeight:700,marginBottom:10}}>Houve algum gasto extra a descontar do pote? <span style={{color:"#555"}}>(ex: baralho, fichas...)</span></div>
+        <div style={{display:"flex",gap:8}}>
+          <button style={nb.btn("#4FC9A4")} onClick={()=>onChange({confirmado:true,descricao:"",valor:0})}>Sim</button>
+          <button style={nb.btn("#F97B6B")} onClick={()=>onChange({confirmado:false,descricao:"",valor:0})}>Não</button>
+        </div>
+      </div>
+    );
+  }
+  return(
+    <div>
+      <div style={{fontSize:12,fontWeight:700,marginBottom:8}}>Houve algum gasto extra a descontar do pote?</div>
+      {gastoExtra.confirmado===false&&(
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <div style={nb.tag("#4FC9A4")}>Sem gasto extra</div>
+          <button style={{...nb.btn(),fontSize:10,padding:"4px 8px"}} onClick={()=>onChange(null)}>✕ Desfazer</button>
+        </div>
+      )}
+      {gastoExtra.confirmado===true&&(
+        <div style={{...nb.cardSm("#f0ebe0")}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+            <span style={{fontWeight:900,fontSize:12}}>Descrição:</span>
+            <input style={{...nb.inp,flex:1}} placeholder="ex: Baralho novo" value={gastoExtra.descricao} onChange={e=>onChange({...gastoExtra,descricao:e.target.value})}/>
+            <button style={{...nb.btn(),fontSize:10,padding:"4px 8px"}} onClick={()=>onChange(null)}>✕</button>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontWeight:900,fontSize:12}}>R$</span>
+            <input style={{...nb.inp,width:100}} type="number" min="0" placeholder="0,00" value={gastoExtra.valor||""} onChange={e=>onChange({...gastoExtra,valor:parseFloat(e.target.value)||0})}/>
+            {gastoExtra.valor>0&&<span style={nb.tag("#F97B6B")}>{fmt(gastoExtra.valor)}</span>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── EDIT SESSION INLINE ────────────────────────────────────
+function EditSession({sess,onSave,onCancel}){
+  const [date,setDate]=useState(fmtDate(sess.date));
+  const [gastos,setGastos]=useState({...sess.gastos});
+  const [positions,setPositions]=useState({...sess.positions});
+  const [bountys,setBountys]=useState(()=>{
     const b=sess.bountys||{};
-    const isNew=Object.values(b).every(v=>typeof v==="string");
-    if(isNew)return{...b};
-    // converte antigo para novo (sem saber quem eliminou quem, deixa vazio)
-    return {};
+    const isNew=Object.keys(b).length>0&&Object.values(b).every(v=>typeof v==="string");
+    return isNew?{...b}:{};
   });
-  const [acordoTipo, setAcordoTipo] = useState(sess.acordoDetails?.tipo||"padrao");
-  const [extrasSeq, setExtrasSeq] = useState(()=>{
+  const [gastoExtra,setGastoExtra]=useState(sess.gastoExtra||null);
+  const [acordoTipo,setAcordoTipo]=useState(sess.acordoDetails?.tipo||"padrao");
+  const [extrasSeq,setExtrasSeq]=useState(()=>{
     const ex=sess.acordoDetails?.extras||{};
     return Object.entries(ex).map(([nome,valor])=>({nome,valor:parseFloat(valor)||0,confirmado:true,pos:sess.positions?.[nome]||0}));
   });
 
   const present=sess.present;
   const posList=Object.entries(positions).sort((a,b)=>parseInt(a[1])-parseInt(b[1]));
-  const top3=posList.slice(0,3).map(([n])=>n);
+  const top3=posList.slice(0,3).map(([n])=>n;
   const posicoesPosTop3=posList.slice(3);
-
   const tP=present.reduce((s,p)=>s+(parseFloat(gastos[p])||0),0);
   const tB=Object.keys(bountys).length*BOUNTY_VALUE;
-  const pL=tP-tB;
+  const tGE=parseFloat(gastoExtra?.valor||0);
+  const pL=tP-tB-tGE;
   const pD=pL*(1-POTE_FINAL_PERCENT);
   const totalExtras=extrasSeq.filter(e=>e.confirmado&&e.valor>0).reduce((s,e)=>s+e.valor,0);
-
   const bountyPorEl=getBountyPorEl(bountys);
-
   const ok=present.every(p=>positions[p]&&parseInt(positions[p])>0)&&new Set(Object.values(positions)).size===present.length;
 
-  const initExtras=()=>{
-    if(posicoesPosTop3.length===0||extrasSeq.length>0)return;
-    setExtrasSeq([{pos:parseInt(posicoesPosTop3[0][1]),nome:posicoesPosTop3[0][0],valor:0,confirmado:null}]);
-  };
-  const confirmarExtra=(idx,recebeu)=>{
-    setExtrasSeq(prev=>{
-      const next=[...prev];
-      next[idx]={...next[idx],confirmado:recebeu};
-      if(recebeu&&idx+1<posicoesPosTop3.length){
-        next.push({pos:parseInt(posicoesPosTop3[idx+1][1]),nome:posicoesPosTop3[idx+1][0],valor:0,confirmado:null});
-      }
-      return next;
-    });
-  };
+  const initExtras=()=>{if(posicoesPosTop3.length===0||extrasSeq.length>0)return;setExtrasSeq([{pos:parseInt(posicoesPosTop3[0][1]),nome:posicoesPosTop3[0][0],valor:0,confirmado:null}]);};
+  const confirmarExtra=(idx,recebeu)=>{setExtrasSeq(prev=>{const next=[...prev];next[idx]={...next[idx],confirmado:recebeu};if(recebeu&&idx+1<posicoesPosTop3.length){next.push({pos:parseInt(posicoesPosTop3[idx+1][1]),nome:posicoesPosTop3[idx+1][0],valor:0,confirmado:null});}return next;});};
   const desfazerExtra=idx=>setExtrasSeq(prev=>prev.slice(0,idx));
 
   const handleSave=()=>{
     const extrasObj=Object.fromEntries(extrasSeq.filter(e=>e.confirmado&&e.valor>0).map(e=>[e.nome,e.valor]));
-    const updated={
-      ...sess,
-      date:toISO(date),
-      gastos,positions,bountys,
-      acordoDetails:{tipo:acordoTipo,extras:extrasObj},
-    };
+    const updated={...sess,date:toISO(date),gastos,positions,bountys,gastoExtra:gastoExtra?.confirmado===true?gastoExtra:null,acordoDetails:{tipo:acordoTipo,extras:extrasObj}};
     onSave(recalcSession(updated));
   };
 
@@ -263,34 +277,28 @@ function EditSession({sess, onSave, onCancel}){
         <button style={nb.btn("#4FC9A4")} onClick={handleSave} disabled={!ok}>✓ Salvar e recalcular</button>
       </div>
 
-      {/* DATA */}
       <div style={{marginBottom:14}}>
         <label style={nb.label}>Data (DD/MM/AAAA)</label>
         <input style={{...nb.inp,width:160}} value={date} onChange={e=>setDate(e.target.value)} placeholder="DD/MM/AAAA"/>
       </div>
 
-      {/* POSIÇÕES E GASTOS */}
       <div style={{marginBottom:14}}>
-        <div style={{display:"grid",gridTemplateColumns:"auto 1fr 120px 120px",gap:"6px 10px",alignItems:"center",marginBottom:6}}>
-          <div style={nb.label}>Pos.</div>
-          <div style={nb.label}>Jogador</div>
-          <div style={nb.label}>Posição</div>
-          <div style={nb.label}>Gasto R$</div>
+        <div style={{display:"grid",gridTemplateColumns:"auto 1fr 110px 110px",gap:"6px 10px",alignItems:"center",marginBottom:6}}>
+          <div/><div style={nb.label}>Jogador</div><div style={nb.label}>Posição</div><div style={nb.label}>Gasto R$</div>
         </div>
         {present.map(p=>(
-          <div key={p} style={{display:"grid",gridTemplateColumns:"auto 1fr 120px 120px",gap:"6px 10px",alignItems:"center",marginBottom:6}}>
+          <div key={p} style={{display:"grid",gridTemplateColumns:"auto 1fr 110px 110px",gap:"6px 10px",alignItems:"center",marginBottom:6}}>
             <Av name={p} size={24}/>
             <span style={{fontWeight:700,fontSize:12}}>{p}</span>
-            <input style={{...nb.inp,width:"100%"}} type="number" min="1" max={present.length} value={positions[p]||""} onChange={e=>setPositions(prev=>({...prev,[p]:e.target.value}))}/>
-            <input style={{...nb.inp,width:"100%"}} type="number" min="0" step="10" value={gastos[p]||""} onChange={e=>setGastos(prev=>({...prev,[p]:e.target.value}))}/>
+            <input style={{...nb.inp}} type="number" min="1" max={present.length} value={positions[p]||""} onChange={e=>setPositions(prev=>({...prev,[p]:e.target.value}))}/>
+            <input style={{...nb.inp}} type="number" min="0" step="10" value={gastos[p]||""} onChange={e=>setGastos(prev=>({...prev,[p]:e.target.value}))}/>
           </div>
         ))}
-        {!ok&&<div style={{...nb.tag("#F97B6B"),marginTop:4}}>Posições devem ser únicas e preenchidas.</div>}
+        {!ok&&<div style={{...nb.tag("#F97B6B"),marginTop:4}}>Posições devem ser únicas.</div>}
       </div>
 
-      {/* BOUNTYS */}
       <div style={{marginBottom:14}}>
-        <div style={nb.label}>Bountys — quem eliminou quem</div>
+        <div style={nb.label}>Bountys</div>
         {posList.filter(([,pos])=>parseInt(pos)>3).map(([eliminado,pos])=>(
           <div key={eliminado} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
             <div style={{...nb.tag("#e5e5e5"),minWidth:28,textAlign:"center"}}>{pos}º</div>
@@ -310,7 +318,11 @@ function EditSession({sess, onSave, onCancel}){
         )}
       </div>
 
-      {/* ACORDO TOP 3 */}
+      {/* GASTO EXTRA */}
+      <div style={{...nb.cardSm("#fff"),marginBottom:14}}>
+        <GastoExtraWidget gastoExtra={gastoExtra} onChange={setGastoExtra}/>
+      </div>
+
       <div style={{marginBottom:14}}>
         <div style={nb.label}>Divisão do top 3</div>
         {[{id:"padrao",label:"Padrão: 40% / 30% / 20%"},{id:"divisao12",label:"Acordo 1º e 2º + 3º 20%"},{id:"divisao123",label:"Acordo 3 dividem igual"}].map(o=>(
@@ -320,7 +332,6 @@ function EditSession({sess, onSave, onCancel}){
         ))}
       </div>
 
-      {/* EXTRAS */}
       {posicoesPosTop3.length>0&&(
         <div style={{marginBottom:14}}>
           <div style={nb.label}>Premiação extra</div>
@@ -333,13 +344,7 @@ function EditSession({sess, onSave, onCancel}){
                 {e.confirmado===null&&<><button style={nb.btn("#4FC9A4")} onClick={()=>confirmarExtra(idx,true)}>Sim</button><button style={nb.btn("#F97B6B")} onClick={()=>confirmarExtra(idx,false)}>Não</button></>}
                 {e.confirmado!==null&&<button style={{...nb.btn(),fontSize:10,padding:"4px 8px"}} onClick={()=>desfazerExtra(idx)}>✕</button>}
               </div>
-              {e.confirmado===true&&(
-                <div style={{display:"flex",alignItems:"center",gap:8}}>
-                  <span style={{fontWeight:900}}>R$</span>
-                  <input style={{...nb.inp,width:100}} type="number" min="0" value={e.valor||""} onChange={ev=>setExtrasSeq(prev=>{const next=[...prev];next[idx]={...next[idx],valor:parseFloat(ev.target.value)||0};return next;})}/>
-                  {e.valor>0&&<span style={nb.tag("#FBBF24")}>{fmt(e.valor)}</span>}
-                </div>
-              )}
+              {e.confirmado===true&&(<div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontWeight:900}}>R$</span><input style={{...nb.inp,width:100}} type="number" min="0" value={e.valor||""} onChange={ev=>setExtrasSeq(prev=>{const next=[...prev];next[idx]={...next[idx],valor:parseFloat(ev.target.value)||0};return next;})}/>{e.valor>0&&<span style={nb.tag("#FBBF24")}>{fmt(e.valor)}</span>}</div>)}
               {e.confirmado===false&&<div style={{fontSize:11,fontWeight:700,color:"#555",marginTop:4}}>Sem premiação extra.</div>}
             </div>
           ))}
@@ -347,11 +352,15 @@ function EditSession({sess, onSave, onCancel}){
         </div>
       )}
 
-      {/* PREVIEW */}
       <div style={{...nb.cardSm("#e5e5e5"),marginBottom:12}}>
         <div style={{...nb.label,marginBottom:6}}>Preview do recálculo:</div>
-        <div style={{fontSize:11,fontWeight:700}}>
-          Pote total: {fmt(tP)} | Bountys: {fmt(tB)} | Pote líquido: {fmt(pL)} | Distribuído: {fmt(pD)} | Pote final 10%: {fmt(pL*POTE_FINAL_PERCENT)}
+        <div style={{fontSize:11,fontWeight:700,lineHeight:1.8}}>
+          Pote total: {fmt(tP)}<br/>
+          {tB>0&&<>(-) Bountys: {fmt(tB)}<br/></>}
+          {tGE>0&&<>(-) {gastoExtra?.descricao||"Gasto extra"}: {fmt(tGE)}<br/></>}
+          = Pote líquido: {fmt(pL)}<br/>
+          (-) Pote final 10%: {fmt(pL*POTE_FINAL_PERCENT)}<br/>
+          = Pote a distribuir: {fmt(pD)}
         </div>
       </div>
 
@@ -363,7 +372,7 @@ function EditSession({sess, onSave, onCancel}){
   );
 }
 
-// ── PAGE: HOME ────────────────────────────────────────────
+// ── PAGE: HOME ─────────────────────────────────────────────
 function PageHome({sessions,poteFinal,standings,balance,temporada,setPage}){
   const totalGasto=sessions.reduce((s,x)=>s+x.totalPote,0);
   const balS=[...balance].filter(b=>b.name!=="Avulso").sort((a,b)=>b.saldo-a.saldo);
@@ -402,7 +411,7 @@ function PageHome({sessions,poteFinal,standings,balance,temporada,setPage}){
       </div>
       <div style={nb.card()}>
         <div style={{...nb.label,fontSize:12,marginBottom:12}}>🃏 Últimas Partidas</div>
-        {[...sessions].sort((a,b)=>new Date(toISO(a.date))-new Date(toISO(b.date))).reverse().slice(0,4).map(sess=>{
+        {[...sessions].sort((a,b)=>new Date(toISO(b.date))-new Date(toISO(a.date))).slice(0,4).map(sess=>{
           const w=Object.entries(sess.positions||{}).find(([,v])=>v==1)?.[0]||"—";
           return(<div key={sess.id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,paddingBottom:10,borderBottom:B}}><div style={{background:"#FBBF24",border:B,borderRadius:2,padding:"4px 8px",textAlign:"center",minWidth:42,boxShadow:"2px 2px 0 #000"}}><div style={{fontSize:10,fontWeight:900}}>{fmtDate(sess.date).slice(0,5)}</div></div><div style={{flex:1}}><div style={{fontSize:12,fontWeight:900}}>{w}</div><div style={{fontSize:10,fontWeight:700,color:"#555"}}>{sess.present.length} jog. · {fmt(sess.totalPote)}</div></div><Av name={w} size={24}/></div>);
         })}
@@ -412,7 +421,7 @@ function PageHome({sessions,poteFinal,standings,balance,temporada,setPage}){
   </div>);
 }
 
-// ── PAGE: CLASSIFICAÇÃO ───────────────────────────────────
+// ── PAGE: CLASSIFICAÇÃO ────────────────────────────────────
 function PageClassificacao({standings,sessions}){
   const max=standings[0]?.points||1;
   return(<div>
@@ -439,7 +448,7 @@ function PageClassificacao({standings,sessions}){
   </div>);
 }
 
-// ── PAGE: SALDO ───────────────────────────────────────────
+// ── PAGE: SALDO ────────────────────────────────────────────
 function PageSaldo({sessions,players}){
   const data=calcBalance(sessions,players);
   const s=[...data].sort((a,b)=>b.saldo-a.saldo);
@@ -471,7 +480,7 @@ function PageSaldo({sessions,players}){
   </div>);
 }
 
-// ── PAGE: ACERTO ──────────────────────────────────────────
+// ── PAGE: ACERTO ───────────────────────────────────────────
 function PageAcerto({sessions}){
   const sorted=[...sessions].sort((a,b)=>new Date(toISO(b.date))-new Date(toISO(a.date)));
   const [selId,setSelId]=useState(sorted.length?sorted[0].id:null);
@@ -491,10 +500,14 @@ function PageAcerto({sessions}){
       `📅 Data: ${fmtDate(sess.date)}`,`👥 Jogadores: ${sess.present.length}`,``,
       `💰 *RESUMO DO POTE*`,
       `• Pote total: *${fmt(sess.totalPote)}*`,
-      `• Bountys pagos: *${fmt(sess.totalBounty)}*`,
-      `• Distribuído: *${fmt(sess.poteDistrib)}*`,
-      `• Reserva pote final (10%): *${fmt(sess.poteFinalVal)}*`,``
     ];
+    if(sess.totalBounty>0)L.push(`• Bountys pagos: *${fmt(sess.totalBounty)}*`);
+    if(sess.gastoExtra?.valor>0)L.push(`• ${sess.gastoExtra.descricao||"Gasto extra"}: *-${fmt(sess.gastoExtra.valor)}*`);
+    L.push(`• Pote líquido: *${fmt(sess.poteLiquido)}*`);
+    L.push(`• Reserva pote final (10%): *${fmt(sess.poteFinalVal)}*`);
+    L.push(`• Distribuído: *${fmt(sess.poteDistrib)}*`);
+    L.push(``);
+
     const acordoTipo=sess.acordoDetails?.tipo||"padrao";
     const extrasObj=sess.acordoDetails?.extras||{};
     const totalExtrasWA=Object.values(extrasObj).reduce((s,v)=>s+parseFloat(v||0),0);
@@ -504,33 +517,24 @@ function PageAcerto({sessions}){
       const top3WA=posList.slice(0,3).map(([n])=>n);
       const basePercWA=acordoTipo==="divisao12"
         ?[{n:top3WA[0],v:sess.poteDistrib*(POTE_PERCENT[0]+POTE_PERCENT[1])/2},{n:top3WA[1],v:sess.poteDistrib*(POTE_PERCENT[0]+POTE_PERCENT[1])/2},{n:top3WA[2],v:sess.poteDistrib*POTE_PERCENT[2]}]
-        :acordoTipo==="divisao123"
-        ?top3WA.map(n=>({n,v:sess.poteDistrib/3}))
+        :acordoTipo==="divisao123"?top3WA.map(n=>({n,v:sess.poteDistrib/3}))
         :top3WA.map((n,i)=>({n,v:sess.poteDistrib*POTE_PERCENT[i]}));
       const tBaseWA=basePercWA.reduce((s,x)=>s+x.v,0);
       const medals=["🥇","🥈","🥉"];
       basePercWA.forEach(({n,v},i)=>{
         if(!n)return;
-        const desc=tBaseWA>0?totalExtrasWA*(v/tBaseWA):0;
-        const final=v-desc;
+        const desc=tBaseWA>0?totalExtrasWA*(v/tBaseWA):0;const final=v-desc;
         L.push(`${medals[i]} ${i+1}º _${n}_ — base: ${fmt(v)}`);
         if(desc>0){L.push(`   Desconto extra: -${fmt(desc)}`);L.push(`   Recebe do pote: *${fmt(final)}*`);}
         else L.push(`   Recebe do pote: *${fmt(final)}*`);
         L.push(``);
       });
-      Object.entries(extrasObj).forEach(([nome,val])=>{
-        if(parseFloat(val||0)>0){const pos=sess.positions?.[nome]||"?";L.push(`🎁 ${pos}º _${nome}_ (premiação extra): *${fmt(parseFloat(val))}*`);}
-      });
+      Object.entries(extrasObj).forEach(([nome,val])=>{if(parseFloat(val||0)>0){const pos=sess.positions?.[nome]||"?";L.push(`🎁 ${pos}º _${nome}_ (premiação extra): *${fmt(parseFloat(val))}*`);}});
       L.push(``);
     }
     if(Object.keys(bountyPorEl).length>0){
       L.push(`🎯 *BOUNTYS*`);
-      Object.entries(bountyPorEl).forEach(([el,elims])=>{
-        const val=elims.length*BOUNTY_VALUE;
-        const nomes=elims.filter(e=>e!=="?").join(", ");
-        if(nomes)L.push(`• _${el}_ eliminou _${nomes}_ → *${fmt(val)}*`);
-        else L.push(`• _${el}_: ${elims.length} eliminação(ões) → *${fmt(val)}*`);
-      });
+      Object.entries(bountyPorEl).forEach(([el,elims])=>{const val=elims.length*BOUNTY_VALUE;const nomes=elims.filter(e=>e!=="?").join(", ");if(nomes)L.push(`• _${el}_ eliminou _${nomes}_ → *${fmt(val)}*`);else L.push(`• _${el}_: ${elims.length} eliminação(ões) → *${fmt(val)}*`);});
       L.push(``);
     }
     L.push(`📊 *RESULTADO POR JOGADOR*`);
@@ -575,10 +579,17 @@ function PageAcerto({sessions}){
     {sess&&(<>
       <div className="grid-4" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:12}}>
         <StatCard label="Pote Total" value={fmt(sess.totalPote)} bg="#fff"/>
-        <StatCard label="Bountys" value={fmt(sess.totalBounty)} bg="#FBBF24"/>
+        <StatCard label="Bountys" value={fmt(sess.totalBounty||0)} bg="#FBBF24"/>
         <StatCard label="Distribuído" value={fmt(sess.poteDistrib)} bg="#fff"/>
         <StatCard label="Pote Final 10%" value={fmt(sess.poteFinalVal)} bg="#7C6FF7"/>
       </div>
+      {sess.gastoExtra?.valor>0&&(
+        <div style={{...nb.cardSm("#F97B6B"),marginBottom:12,display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:16}}>🧾</span>
+          <span style={{fontWeight:900,fontSize:13}}>Gasto extra: {sess.gastoExtra.descricao||"—"}</span>
+          <span style={{fontWeight:900,fontSize:13,marginLeft:"auto"}}>{fmt(sess.gastoExtra.valor)}</span>
+        </div>
+      )}
       <div className="grid-2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
         <div style={nb.card()}>
           <div style={{...nb.label,fontSize:12,marginBottom:12}}>Resultado</div>
@@ -610,22 +621,19 @@ function PageAcerto({sessions}){
   </div>);
 }
 
-// ── PAGE: PARTIDAS ────────────────────────────────────────
+// ── PAGE: PARTIDAS ─────────────────────────────────────────
 function PagePartidas({sessions,isAdmin,onDelete,onEdit}){
   const sorted=[...sessions].sort((a,b)=>new Date(toISO(b.date))-new Date(toISO(a.date)));
   const [exp,setExp]=useState(null);
   const [editing,setEditing]=useState(null);
-
   return(<div>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}><div style={nb.title}>Partidas</div><span style={nb.tag("#FBBF24")}>{sessions.length} registradas</span></div>
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
       {sorted.map(sess=>{
         const pl=Object.entries(sess.positions||{}).sort((a,b)=>parseInt(a[1])-parseInt(b[1]));
-        const ie=exp===sess.id;
-        const isEd=editing===sess.id;
+        const ie=exp===sess.id,isEd=editing===sess.id;
         const w=pl[0]?.[0]||"—";
         return(<div key={sess.id} style={{border:B,borderRadius:R,overflow:"hidden",boxShadow:SH}}>
-          {/* HEADER */}
           <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",cursor:"pointer",background:ie||isEd?"#f0ebe0":"#fff"}} onClick={()=>{if(!isEd){setExp(ie?null:sess.id);setEditing(null);}}}>
             <div style={{background:"#FBBF24",border:B,borderRadius:2,padding:"4px 10px",textAlign:"center",boxShadow:"2px 2px 0 #000"}}>
               <div style={{fontSize:10,fontWeight:900}}>{fmtDate(sess.date).slice(3,10)}</div>
@@ -638,8 +646,6 @@ function PagePartidas({sessions,isAdmin,onDelete,onEdit}){
             </div>
             <span style={{fontWeight:900,fontSize:16}}>{ie||isEd?"▲":"▼"}</span>
           </div>
-
-          {/* DETALHE */}
           {ie&&!isEd&&(
             <div style={{borderTop:B,padding:"12px 14px",background:"#faf8f4"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
@@ -647,7 +653,7 @@ function PagePartidas({sessions,isAdmin,onDelete,onEdit}){
                 <tbody>{pl.map(([n,pos],i)=>{const sl=sess.saldos?.[n]||0;return(<tr key={n} style={{borderBottom:"2px dashed #ccc",background:i%2===0?"#fff":"#faf8f4"}}><td style={{padding:"8px"}}><span style={nb.tag("#e5e5e5")}>{pos}</span></td><td style={{padding:"8px"}}><div style={{display:"flex",alignItems:"center",gap:6}}><Av name={n} size={22}/><span style={{fontWeight:900}}>{n}</span></div></td><td style={{padding:"8px",fontWeight:700,color:"#555"}}>{fmt(sess.gastos?.[n]||0)}</td><td style={{padding:"8px",fontWeight:700}}>{fmt(sess.ganhos?.[n]||0)}</td><td style={{padding:"8px"}}><span style={nb.tag(sl>=0?"#4FC9A4":"#F97B6B")}>{fmt(sl)}</span></td><td style={{padding:"8px",fontWeight:700,color:"#555"}}>{n!=="Avulso"?fmtPts(sess.pts?.[n]||0):"—"}</td></tr>);})}</tbody>
               </table>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10}}>
-                <span style={{fontWeight:700,fontSize:11}}>Pote final: {fmt(sess.poteFinalVal||0)}</span>
+                <span style={{fontWeight:700,fontSize:11}}>Pote final: {fmt(sess.poteFinalVal||0)}{sess.gastoExtra?.valor>0?` | Gasto extra (${sess.gastoExtra.descricao}): ${fmt(sess.gastoExtra.valor)}`:""}</span>
                 <div style={{display:"flex",gap:8}}>
                   {isAdmin&&<button style={nb.btn("#7C6FF7")} onClick={e=>{e.stopPropagation();setEditing(sess.id);setExp(null);}}>✏️ Editar</button>}
                   {isAdmin&&<button style={nb.btn("#F97B6B")} onClick={e=>{e.stopPropagation();onDelete(sess.id);}}>✕ Excluir</button>}
@@ -655,22 +661,14 @@ function PagePartidas({sessions,isAdmin,onDelete,onEdit}){
               </div>
             </div>
           )}
-
-          {/* EDIÇÃO INLINE */}
-          {isEd&&(
-            <EditSession
-              sess={sess}
-              onSave={updated=>{onEdit(updated);setEditing(null);}}
-              onCancel={()=>setEditing(null)}
-            />
-          )}
+          {isEd&&(<EditSession sess={sess} onSave={updated=>{onEdit(updated);setEditing(null);}} onCancel={()=>setEditing(null)}/>)}
         </div>);
       })}
     </div>
   </div>);
 }
 
-// ── PAGE: POTE FINAL ──────────────────────────────────────
+// ── PAGE: POTE FINAL ───────────────────────────────────────
 function PagePote({poteFinal,isAdmin,onEdit}){
   const [ed,setEd]=useState(false);const [v,setV]=useState(poteFinal.toFixed(2));
   return(<div>
@@ -690,7 +688,7 @@ function PagePote({poteFinal,isAdmin,onEdit}){
   </div>);
 }
 
-// ── PAGE: CAMPEÕES ────────────────────────────────────────
+// ── PAGE: CAMPEÕES ─────────────────────────────────────────
 function PageCampeoes({standings,poteFinal,historico,temporada}){
   const allChamps=[...CHAMPIONS_HISTORY,...(historico||[]).map(h=>({year:h.year,champion:h.champion}))];
   const count={};allChamps.forEach(({champion:c})=>{count[c]=(count[c]||0)+1;});
@@ -720,7 +718,7 @@ function PageCampeoes({standings,poteFinal,historico,temporada}){
   </div>);
 }
 
-// ── PAGE: JOGADORES ───────────────────────────────────────
+// ── PAGE: JOGADORES ────────────────────────────────────────
 function PageJogadores({players,isAdmin,onAdd}){
   const [name,setName]=useState("");
   return(<div>
@@ -732,7 +730,7 @@ function PageJogadores({players,isAdmin,onAdd}){
   </div>);
 }
 
-// ── PAGE: NOVA PARTIDA ────────────────────────────────────
+// ── PAGE: NOVA PARTIDA ─────────────────────────────────────
 function PageNova({players,onSave}){
   const [step,setStep]=useState(1);
   const [date,setDate]=useState(fmtDate(new Date().toISOString().slice(0,10)));
@@ -740,12 +738,16 @@ function PageNova({players,onSave}){
   const [gastos,setGastos]=useState({});
   const [positions,setPositions]=useState({});
   const [bountys,setBountys]=useState({});
+  const [gastoExtra,setGastoExtra]=useState(null);
   const [acordoTop3,setAcordoTop3]=useState("padrao");
   const [extrasSeq,setExtrasSeq]=useState([]);
 
   const tP=present.reduce((s,p)=>s+(parseFloat(gastos[p])||0),0);
   const tB=Object.keys(bountys).length*BOUNTY_VALUE;
-  const pL=tP-tB,pFV=pL*POTE_FINAL_PERCENT,pD=pL*(1-POTE_FINAL_PERCENT);
+  const tGE=parseFloat(gastoExtra?.valor||0);
+  const pL=tP-tB-tGE;
+  const pFV=pL*POTE_FINAL_PERCENT;
+  const pD=pL*(1-POTE_FINAL_PERCENT);
   const posList=Object.entries(positions).sort((a,b)=>parseInt(a[1])-parseInt(b[1]));
   const top3=posList.slice(0,3).map(([n])=>n);
   const posicoesPosTop3=posList.slice(3);
@@ -754,10 +756,10 @@ function PageNova({players,onSave}){
     if(present.includes(p)){const np=present.filter(x=>x!==p);setPresent(np);const pos={};np.forEach((n,i)=>pos[n]=i+1);setPositions(pos);}
     else{const np=[...present,p];setPresent(np);const pos={};np.forEach((n,i)=>pos[n]=i+1);setPositions(pos);}
   };
-
   const ok1=date&&present.length>=2;
   const ok2=present.every(p=>gastos[p]&&parseFloat(gastos[p])>0);
   const ok3=present.every(p=>positions[p]&&parseInt(positions[p])>0)&&new Set(Object.values(positions)).size===present.length;
+  const ok4=gastoExtra!==null; // respondeu à pergunta do gasto extra
   const bountyPorEl=getBountyPorEl(bountys);
   const totalExtras=extrasSeq.filter(e=>e.confirmado&&e.valor>0).reduce((s,e)=>s+e.valor,0);
 
@@ -782,10 +784,10 @@ function PageNova({players,onSave}){
     const ptT=POINTS_TABLE[Math.min(regulares.length,12)]||POINTS_TABLE[12];
     const pts={};posList.filter(([n])=>n!=="Avulso").forEach(([n],i)=>{pts[n]=i<ptT.length?ptT[i]:0;});
     if(present.includes("Avulso"))pts["Avulso"]=0;
-    return{ganhos:g,saldos:sl,pts,poteFinalVal:pFV,totalPote:tP,totalBounty:tB,poteLiquido:pL,poteDistrib:pD};
+    return{ganhos:g,saldos:sl,pts,poteFinalVal:pFV,totalPote:tP,totalBounty:tB,gastoExtraTotal:tGE,poteLiquido:pL,poteDistrib:pD};
   };
 
-  const STEPS=["Jogadores","Gastos","Posições","Bountys","Acordo","Resumo"];
+  const STEPS=["Jogadores","Gastos","Posições","Bountys","Gasto Extra","Acordo","Resumo"];
 
   return(<div>
     <div style={{marginBottom:20}}><div style={nb.title}>Nova Partida</div></div>
@@ -793,6 +795,7 @@ function PageNova({players,onSave}){
       <div style={{display:"flex",gap:4,marginBottom:8}}>{STEPS.map((s,i)=><div key={s} style={{flex:1,height:6,border:"2px solid #000",borderRadius:2,background:i<step-1?"#000":i===step-1?"#7C6FF7":"#e5e5e5"}}/>)}</div>
       <div style={{...nb.tag("#FBBF24"),marginBottom:14}}>Passo {step}/{STEPS.length} — {STEPS[step-1]}</div>
 
+      {/* PASSO 1 */}
       {step===1&&<div style={nb.card()}>
         <div style={{marginBottom:14}}><label style={nb.label}>Data (DD/MM/AAAA)</label><input style={{...nb.inp,width:160}} value={date} onChange={e=>setDate(e.target.value)} placeholder="DD/MM/AAAA"/></div>
         <label style={nb.label}>Clique para selecionar — ordem define posição</label>
@@ -804,12 +807,14 @@ function PageNova({players,onSave}){
         <button style={nb.btn("#7C6FF7")} onClick={()=>setStep(2)} disabled={!ok1}>Próximo →</button>
       </div>}
 
+      {/* PASSO 2 */}
       {step===2&&<div style={nb.card()}>
         {present.map(p=><div key={p} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><Av name={p}/><span style={{flex:1,fontSize:13,fontWeight:700}}>{p}</span><span style={{fontWeight:900}}>R$</span><input style={{...nb.inp,width:90}} type="number" min="0" step="10" placeholder="0" value={gastos[p]||""} onChange={e=>setGastos(prev=>({...prev,[p]:e.target.value}))}/></div>)}
         <div style={{...nb.tag("#4FC9A4"),margin:"10px 0"}}>Pote total: {fmt(tP)}</div>
         <div style={{display:"flex",gap:6,marginTop:10}}><button style={nb.btn()} onClick={()=>setStep(1)}>← Voltar</button><button style={nb.btn("#7C6FF7")} onClick={()=>setStep(3)} disabled={!ok2}>Próximo →</button></div>
       </div>}
 
+      {/* PASSO 3 */}
       {step===3&&<div style={nb.card()}>
         <div style={{fontSize:11,fontWeight:700,color:"#555",marginBottom:12}}>Posições preenchidas automaticamente. Ajuste se necessário.</div>
         {present.map(p=><div key={p} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><Av name={p}/><span style={{flex:1,fontSize:13,fontWeight:700}}>{p}</span><input style={{...nb.inp,width:80}} type="number" min="1" max={present.length} value={positions[p]||""} onChange={e=>setPositions(prev=>({...prev,[p]:e.target.value}))}/></div>)}
@@ -817,6 +822,7 @@ function PageNova({players,onSave}){
         <div style={{display:"flex",gap:6,marginTop:10}}><button style={nb.btn()} onClick={()=>setStep(2)}>← Voltar</button><button style={nb.btn("#7C6FF7")} onClick={()=>setStep(4)} disabled={!ok3}>Próximo →</button></div>
       </div>}
 
+      {/* PASSO 4 — BOUNTYS */}
       {step===4&&<div style={nb.card()}>
         <div style={{...nb.label,marginBottom:4}}>Quem eliminou quem? (R$10 por eliminação)</div>
         <div style={{fontSize:11,fontWeight:700,color:"#555",marginBottom:12}}>Todos exceto os 3 primeiros colocados podem ter sido eliminados por qualquer jogador.</div>
@@ -832,11 +838,33 @@ function PageNova({players,onSave}){
           </div>
         ))}
         {Object.keys(bountyPorEl).length>0&&(<div style={{...nb.cardSm("#FBBF24"),marginBottom:12}}><div style={{...nb.label,marginBottom:6}}>Resumo de bountys:</div>{Object.entries(bountyPorEl).map(([el,elims])=>(<div key={el} style={{fontSize:11,fontWeight:700,marginBottom:3}}>{el} eliminou {elims.join(", ")} → {fmt(elims.length*BOUNTY_VALUE)}</div>))}<div style={{fontWeight:900,marginTop:6}}>Total: {fmt(tB)}</div></div>)}
-        <div style={{...nb.tag("#4FC9A4"),margin:"8px 0"}}>Bountys: {fmt(tB)} · Pote líquido: {fmt(pL)}</div>
-        <div style={{display:"flex",gap:6,marginTop:10}}><button style={nb.btn()} onClick={()=>setStep(3)}>← Voltar</button><button style={nb.btn("#7C6FF7")} onClick={()=>{initExtras();setStep(5);}}>Próximo →</button></div>
+        <div style={{...nb.tag("#4FC9A4"),margin:"8px 0"}}>Bountys: {fmt(tB)}</div>
+        <div style={{display:"flex",gap:6,marginTop:10}}><button style={nb.btn()} onClick={()=>setStep(3)}>← Voltar</button><button style={nb.btn("#7C6FF7")} onClick={()=>setStep(5)}>Próximo →</button></div>
       </div>}
 
+      {/* PASSO 5 — GASTO EXTRA */}
       {step===5&&<div style={nb.card()}>
+        <GastoExtraWidget gastoExtra={gastoExtra} onChange={setGastoExtra}/>
+        {gastoExtra!==null&&(
+          <div style={{...nb.cardSm("#e5e5e5"),marginTop:12}}>
+            <div style={{fontSize:11,fontWeight:700,lineHeight:1.8}}>
+              Pote total: {fmt(tP)}<br/>
+              {tB>0&&<>(-) Bountys: {fmt(tB)}<br/></>}
+              {tGE>0&&<>(-) {gastoExtra?.descricao||"Gasto extra"}: {fmt(tGE)}<br/></>}
+              = Pote líquido: {fmt(pL)}<br/>
+              (-) Pote final 10%: {fmt(pFV)}<br/>
+              = Pote a distribuir: {fmt(pD)}
+            </div>
+          </div>
+        )}
+        <div style={{display:"flex",gap:6,marginTop:14}}>
+          <button style={nb.btn()} onClick={()=>setStep(4)}>← Voltar</button>
+          <button style={nb.btn("#7C6FF7")} onClick={()=>{initExtras();setStep(6);}} disabled={!ok4}>Próximo →</button>
+        </div>
+      </div>}
+
+      {/* PASSO 6 — ACORDO */}
+      {step===6&&<div style={nb.card()}>
         <div style={{fontWeight:900,marginBottom:4}}>Pote a distribuir: {fmt(pD)}</div>
         <div style={{fontWeight:700,color:"#555",marginBottom:12,fontSize:11}}>Top 3: {top3.join(", ")||"—"}</div>
         <div style={{...nb.label,marginBottom:8}}>Divisão do top 3:</div>
@@ -863,10 +891,11 @@ function PageNova({players,onSave}){
           {extrasSeq.length===0&&<button style={nb.btn("#FBBF24")} onClick={initExtras}>+ Verificar premiação extra</button>}
         </>}
         {totalExtras>0&&(<div style={{...nb.cardSm("#e5e5e5"),marginTop:10}}><div style={{fontWeight:900,marginBottom:6}}>Desconto proporcional do top 3:</div>{baseTop3().map(({n,v})=>{if(!n)return null;const tBase=baseTop3().reduce((s,x)=>s+x.v,0);const desc=tBase>0?totalExtras*(v/tBase):0;return <div key={n} style={{fontSize:11,fontWeight:700,marginBottom:3}}>{n}: {fmt(v)} - {fmt(desc)} = <strong>{fmt(v-desc)}</strong></div>;})}</div>)}
-        <div style={{display:"flex",gap:6,marginTop:14}}><button style={nb.btn()} onClick={()=>setStep(4)}>← Voltar</button><button style={nb.btn("#7C6FF7")} onClick={()=>setStep(6)}>Ver resumo →</button></div>
+        <div style={{display:"flex",gap:6,marginTop:14}}><button style={nb.btn()} onClick={()=>setStep(5)}>← Voltar</button><button style={nb.btn("#7C6FF7")} onClick={()=>setStep(7)}>Ver resumo →</button></div>
       </div>}
 
-      {step===6&&(()=>{
+      {/* PASSO 7 — RESUMO */}
+      {step===7&&(()=>{
         const res=calc();
         return(<div style={nb.card()}>
           <div className="grid-3" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:12}}>
@@ -874,13 +903,14 @@ function PageNova({players,onSave}){
             <div style={nb.cardSm("#7C6FF7")}><div style={nb.label}>Pote Final 10%</div><div style={{fontWeight:900}}>{fmt(res.poteFinalVal)}</div></div>
             <div style={nb.cardSm()}><div style={nb.label}>Distribuído</div><div style={{fontWeight:900}}>{fmt(res.poteDistrib)}</div></div>
           </div>
+          {tGE>0&&<div style={{...nb.cardSm("#F97B6B"),marginBottom:12}}><span style={{fontWeight:900}}>🧾 Gasto extra ({gastoExtra?.descricao}): {fmt(tGE)}</span></div>}
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginBottom:12}}>
             <thead><tr style={{borderBottom:B}}>{["Jogador","Pos.","Gasto","Ganhou","Saldo","Pts"].map(h=><th key={h} style={{padding:"6px 8px",textAlign:"left",fontWeight:900,fontSize:10,textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
             <tbody>{posList.map(([n,pos],i)=>{const sl=res.saldos[n];return(<tr key={n} style={{borderBottom:"2px dashed #ccc",background:i%2===0?"#fff":"#faf8f4"}}><td style={{padding:"8px"}}><div style={{display:"flex",alignItems:"center",gap:6}}><Av name={n} size={22}/><span style={{fontWeight:900}}>{n}</span></div></td><td style={{padding:"8px"}}><span style={nb.tag("#e5e5e5")}>{pos}</span></td><td style={{padding:"8px",fontWeight:700,color:"#555"}}>{fmt(gastos[n]||0)}</td><td style={{padding:"8px",fontWeight:700}}>{fmt(res.ganhos[n]||0)}</td><td style={{padding:"8px"}}><span style={nb.tag(sl>=0?"#4FC9A4":"#F97B6B")}>{fmt(sl)}</span></td><td style={{padding:"8px",fontWeight:700,color:"#555"}}>{n!=="Avulso"?fmtPts(res.pts[n]||0):"—"}</td></tr>);})}</tbody>
           </table>
           <div style={{display:"flex",gap:6}}>
-            <button style={nb.btn()} onClick={()=>setStep(5)}>← Voltar</button>
-            <button style={nb.btn("#4FC9A4")} onClick={()=>{const r=calc();onSave({id:Date.now(),date:toISO(date),present,gastos,positions,bountys,acordoDetails:{tipo:acordoTop3,extras:Object.fromEntries(extrasSeq.filter(e=>e.confirmado&&e.valor>0).map(e=>[e.nome,e.valor]))},totalBounty:tB,...r});}}>✓ Salvar partida</button>
+            <button style={nb.btn()} onClick={()=>setStep(6)}>← Voltar</button>
+            <button style={nb.btn("#4FC9A4")} onClick={()=>{const r=calc();onSave({id:Date.now(),date:toISO(date),present,gastos,positions,bountys,gastoExtra:gastoExtra?.confirmado===true?gastoExtra:null,acordoDetails:{tipo:acordoTop3,extras:Object.fromEntries(extrasSeq.filter(e=>e.confirmado&&e.valor>0).map(e=>[e.nome,e.valor]))},totalBounty:tB,...r});}}>✓ Salvar partida</button>
           </div>
         </div>);
       })()}
@@ -888,7 +918,7 @@ function PageNova({players,onSave}){
   </div>);
 }
 
-// ── PAGE: NOVA TEMPORADA ──────────────────────────────────
+// ── PAGE: NOVA TEMPORADA ───────────────────────────────────
 function PageTemporada({data,standings,poteFinal,onConfirm}){
   const [conf,setConf]=useState(false);const [ano,setAno]=useState(new Date().getFullYear()+1);
   const campeao=standings[0]?.name||"—";
@@ -910,7 +940,7 @@ function PageTemporada({data,standings,poteFinal,onConfirm}){
   </div>);
 }
 
-// ── LOGIN ─────────────────────────────────────────────────
+// ── LOGIN ──────────────────────────────────────────────────
 function Login({onLogin,onBack}){
   const [u,setU]=useState("");const [p,setP]=useState("");const [err,setErr]=useState(false);
   const go=()=>{if(u===ADMIN_USER&&p===ADMIN_PASS)onLogin();else setErr(true);};
@@ -929,7 +959,7 @@ function Login({onLogin,onBack}){
   </div>);
 }
 
-// ── APP ROOT ──────────────────────────────────────────────
+// ── APP ROOT ───────────────────────────────────────────────
 function App(){
   const [mode,setMode]=useState("guest");
   const [page,setPage]=useState("home");
@@ -948,9 +978,9 @@ function App(){
   const handleEditSession=updated=>{
     update(prev=>{
       const oldSess=prev.sessions.find(s=>s.id===updated.id);
-      const oldPoteFinal=oldSess?.poteFinalVal||0;
+      const oldPFV=oldSess?.poteFinalVal||0;
       const sessions=prev.sessions.map(s=>s.id===updated.id?updated:s);
-      const poteFinal=prev.poteFinal-oldPoteFinal+updated.poteFinalVal;
+      const poteFinal=prev.poteFinal-oldPFV+updated.poteFinalVal;
       return{...prev,sessions,poteFinal};
     });
   };
