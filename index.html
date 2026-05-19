@@ -851,15 +851,22 @@ function PageNova({players,onSave}){
       {step===1&&<div style={nb.card()}>
         <div style={{marginBottom:14}}><label style={nb.label}>Data (DD/MM/AAAA)</label><input style={{...nb.inp,width:160}} value={date} onChange={e=>setDate(e.target.value)} placeholder="DD/MM/AAAA"/></div>
         <label style={nb.label}>Clique para selecionar — ordem define posição</label>
-        <div style={{fontSize:11,fontWeight:700,color:"#555",marginBottom:6}}>1º clique = presente (jogou) · 2º clique = faltou (paga R$40) · 3º clique = remove</div>
+        <div style={{...nb.cardSm("#FBBF24"),marginBottom:10}}>
+          <div style={{fontSize:11,fontWeight:900}}>
+            1° clique = jogou (cor) · 2° clique = FALTOU (amarelo, paga R$40) · 3° clique = remove
+          </div>
+        </div>
         <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
           {players.map(p=>{
             const idx=present.indexOf(p);
             const ausente=ausentes.includes(p);
             const sel=idx>=0;
-            return(<button key={p} onClick={()=>tog(p)} style={{...nb.btn(ausente?"#FBBF24":sel?playerColor(p):"#fff"),padding:"5px 10px",position:"relative"}}>
-              {sel&&<span style={{background:"#000",color:playerColor(p),borderRadius:2,padding:"0 4px",fontSize:10,marginRight:4}}>{idx+1}º</span>}
-              {ausente&&<span style={{background:"#000",color:"#FBBF24",borderRadius:2,padding:"0 4px",fontSize:10,marginRight:4}}>⚠️</span>}
+            let bg="#fff", borderColor="#000", textColor="#000";
+            if(ausente){bg="#FBBF24";borderColor="#000";textColor="#000";}
+            else if(sel){bg=playerColor(p);borderColor="#000";textColor="#000";}
+            return(<button key={p} onClick={()=>tog(p)} style={{display:"inline-flex",alignItems:"center",gap:4,padding:"6px 12px",background:bg,border:`3px solid ${borderColor}`,borderRadius:4,boxShadow:"3px 3px 0 #000",cursor:"pointer",fontSize:11,fontWeight:900,color:textColor,textTransform:"uppercase",letterSpacing:1}}>
+              {sel&&!ausente&&<span style={{background:"#000",color:bg,borderRadius:2,padding:"1px 5px",fontSize:10}}>{idx+1}°</span>}
+              {ausente&&<span style={{background:"#000",color:"#FBBF24",borderRadius:2,padding:"1px 5px",fontSize:10}}>FALTOU</span>}
               {p}
             </button>);
           })}
