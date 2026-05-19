@@ -22,6 +22,16 @@
     .grid-3{grid-template-columns:1fr 1fr!important;}
     .mobile-nav{display:block!important;}
     .mobile-admin-btn{display:flex!important;}
+    /* Nova partida mobile */
+    .nova-grid{grid-template-columns:1fr!important;}
+    .nova-row{grid-template-columns:auto 1fr 70px 80px!important;}
+    .nova-row-edit{grid-template-columns:auto 1fr 60px 70px!important;}
+    .step-max{max-width:100%!important;}
+    /* Bounty select */
+    .bounty-row{flex-wrap:wrap!important;gap:6px!important;}
+    .bounty-select{min-width:100%!important;}
+    /* Edit session grid mobile */
+    .nova-row-edit{grid-template-columns:auto 1fr 60px 65px!important;}
   }
 </style>
 </head>
@@ -298,11 +308,11 @@ function EditSession({sess,onSave,onCancel}){
       </div>
 
       <div style={{marginBottom:14}}>
-        <div style={{display:"grid",gridTemplateColumns:"auto 1fr 110px 110px",gap:"6px 10px",alignItems:"center",marginBottom:6}}>
-          <div/><div style={nb.label}>Jogador</div><div style={nb.label}>Posição</div><div style={nb.label}>Gasto R$</div>
+        <div className="nova-row-edit" style={{display:"grid",gridTemplateColumns:"auto 1fr 90px 90px",gap:"6px 8px",alignItems:"center",marginBottom:6}}>
+          <div/><div style={nb.label}>Jogador</div><div style={nb.label}>Pos.</div><div style={nb.label}>R$</div>
         </div>
         {present.map(p=>(
-          <div key={p} style={{display:"grid",gridTemplateColumns:"auto 1fr 110px 110px",gap:"6px 10px",alignItems:"center",marginBottom:6}}>
+          <div key={p} className="nova-row-edit" style={{display:"grid",gridTemplateColumns:"auto 1fr 90px 90px",gap:"6px 8px",alignItems:"center",marginBottom:6}}>
             <Av name={p} size={24}/>
             <span style={{fontWeight:700,fontSize:12}}>{p}</span>
             <input style={{...nb.inp}} type="number" min="1" max={present.length} value={positions[p]||""} onChange={e=>setPositions(prev=>({...prev,[p]:e.target.value}))}/>
@@ -315,11 +325,13 @@ function EditSession({sess,onSave,onCancel}){
       <div style={{marginBottom:14}}>
         <div style={nb.label}>Bountys</div>
         {posList.filter(([,pos])=>parseInt(pos)>3).map(([eliminado,pos])=>(
-          <div key={eliminado} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-            <div style={{...nb.tag("#e5e5e5"),minWidth:28,textAlign:"center"}}>{pos}º</div>
-            <Av name={eliminado} size={22}/>
-            <span style={{flex:1,fontSize:12,fontWeight:700}}>{eliminado} foi elim. por:</span>
-            <select style={{...nb.sel,minWidth:130}} value={bountys[eliminado]||""} onChange={e=>{const val=e.target.value;setBountys(prev=>{const next={...prev};if(val)next[eliminado]=val;else delete next[eliminado];return next;})}}>
+          <div key={eliminado} style={{marginBottom:8,paddingBottom:8,borderBottom:"2px dashed #eee"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
+              <div style={{...nb.tag("#e5e5e5"),minWidth:28,textAlign:"center"}}>{pos}º</div>
+              <Av name={eliminado} size={22}/>
+              <span style={{fontSize:12,fontWeight:700}}>{eliminado} foi elim. por:</span>
+            </div>
+            <select style={{...nb.sel,width:"100%"}} value={bountys[eliminado]||""} onChange={e=>{const val=e.target.value;setBountys(prev=>{const next={...prev};if(val)next[eliminado]=val;else delete next[eliminado];return next;})}}>
               <option value="">— ninguém —</option>
               {present.filter(p=>p!==eliminado).map(p=><option key={p} value={p}>{p}</option>)}
             </select>
@@ -831,7 +843,7 @@ function PageNova({players,onSave}){
 
   return(<div>
     <div style={{marginBottom:20}}><div style={nb.title}>Nova Partida</div></div>
-    <div style={{maxWidth:520}}>
+    <div style={{maxWidth:520}} className="step-max">
       <div style={{display:"flex",gap:4,marginBottom:8}}>{STEPS.map((s,i)=><div key={s} style={{flex:1,height:6,border:"2px solid #000",borderRadius:2,background:i<step-1?"#000":i===step-1?"#7C6FF7":"#e5e5e5"}}/>)}</div>
       <div style={{...nb.tag("#FBBF24"),marginBottom:14}}>Passo {step}/{STEPS.length} — {STEPS[step-1]}</div>
 
@@ -859,7 +871,7 @@ function PageNova({players,onSave}){
 
       {/* PASSO 2 */}
       {step===2&&<div style={nb.card()}>
-        {present.map(p=><div key={p} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><Av name={p}/><span style={{flex:1,fontSize:13,fontWeight:700}}>{p}</span><span style={{fontWeight:900}}>R$</span><input style={{...nb.inp,width:90}} type="number" min="0" step="10" placeholder="0" value={gastos[p]||""} onChange={e=>setGastos(prev=>({...prev,[p]:e.target.value}))}/></div>)}
+        {present.map(p=><div key={p} className="nova-row" style={{display:"grid",gridTemplateColumns:"auto 1fr auto auto",gap:"6px 8px",alignItems:"center",marginBottom:8}}><Av name={p}/><span style={{fontSize:13,fontWeight:700}}>{p}</span><span style={{fontWeight:900}}>R$</span><input style={{...nb.inp,width:80}} type="number" min="0" step="10" placeholder="0" value={gastos[p]||""} onChange={e=>setGastos(prev=>({...prev,[p]:e.target.value}))}/></div>)}
         <div style={{...nb.tag("#4FC9A4"),margin:"10px 0"}}>Pote total: {fmt(tP)}</div>
         <div style={{display:"flex",gap:6,marginTop:10}}><button style={nb.btn()} onClick={()=>setStep(1)}>← Voltar</button><button style={nb.btn("#7C6FF7")} onClick={()=>setStep(3)} disabled={!ok2}>Próximo →</button></div>
       </div>}
@@ -867,7 +879,7 @@ function PageNova({players,onSave}){
       {/* PASSO 3 */}
       {step===3&&<div style={nb.card()}>
         <div style={{fontSize:11,fontWeight:700,color:"#555",marginBottom:12}}>Posições preenchidas automaticamente. Ajuste se necessário.</div>
-        {present.map(p=><div key={p} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><Av name={p}/><span style={{flex:1,fontSize:13,fontWeight:700}}>{p}</span><input style={{...nb.inp,width:80}} type="number" min="1" max={present.length} value={positions[p]||""} onChange={e=>setPositions(prev=>({...prev,[p]:e.target.value}))}/></div>)}
+        {present.map(p=><div key={p} className="nova-row" style={{display:"grid",gridTemplateColumns:"auto 1fr auto",gap:"6px 8px",alignItems:"center",marginBottom:8}}><Av name={p}/><span style={{fontSize:13,fontWeight:700}}>{p}</span><input style={{...nb.inp,width:70}} type="number" min="1" max={present.length} value={positions[p]||""} onChange={e=>setPositions(prev=>({...prev,[p]:e.target.value}))}/></div>)}
         {!ok3&&<div style={{...nb.tag("#F97B6B"),marginBottom:8}}>Posições devem ser únicas.</div>}
         <div style={{display:"flex",gap:6,marginTop:10}}><button style={nb.btn()} onClick={()=>setStep(2)}>← Voltar</button><button style={nb.btn("#7C6FF7")} onClick={()=>setStep(4)} disabled={!ok3}>Próximo →</button></div>
       </div>}
@@ -877,11 +889,13 @@ function PageNova({players,onSave}){
         <div style={{...nb.label,marginBottom:4}}>Quem eliminou quem? (R$10 por eliminação)</div>
         <div style={{fontSize:11,fontWeight:700,color:"#555",marginBottom:12}}>Todos exceto os 3 primeiros colocados podem ter sido eliminados por qualquer jogador.</div>
         {posList.filter(([,pos])=>parseInt(pos)>3).map(([eliminado,pos])=>(
-          <div key={eliminado} style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,paddingBottom:10,borderBottom:"2px dashed #ccc"}}>
-            <div style={{...nb.tag("#e5e5e5"),minWidth:28,textAlign:"center"}}>{pos}º</div>
-            <Av name={eliminado} size={24}/>
-            <span style={{flex:1,fontSize:12,fontWeight:700}}>{eliminado} foi eliminado por:</span>
-            <select style={{...nb.sel,minWidth:130}} value={bountys[eliminado]||""} onChange={e=>{const val=e.target.value;setBountys(prev=>{const next={...prev};if(val)next[eliminado]=val;else delete next[eliminado];return next;})}}>
+          <div key={eliminado} style={{marginBottom:10,paddingBottom:10,borderBottom:"2px dashed #ccc"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+              <div style={{...nb.tag("#e5e5e5"),minWidth:28,textAlign:"center"}}>{pos}º</div>
+              <Av name={eliminado} size={24}/>
+              <span style={{fontSize:12,fontWeight:700}}>{eliminado} foi elim. por:</span>
+            </div>
+            <select style={{...nb.sel,width:"100%"}} value={bountys[eliminado]||""} onChange={e=>{const val=e.target.value;setBountys(prev=>{const next={...prev};if(val)next[eliminado]=val;else delete next[eliminado];return next;})}}>
               <option value="">— ninguém —</option>
               {present.filter(p=>p!==eliminado).map(p=><option key={p} value={p}>{p}</option>)}
             </select>
