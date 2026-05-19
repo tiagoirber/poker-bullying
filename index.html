@@ -20,6 +20,8 @@
     .grid-4{grid-template-columns:1fr 1fr!important;}
     .grid-2{grid-template-columns:1fr!important;}
     .grid-3{grid-template-columns:1fr 1fr!important;}
+    .mobile-nav{display:block!important;}
+    .mobile-admin-btn{display:flex!important;}
   }
 </style>
 </head>
@@ -1076,7 +1078,7 @@ function App(){
         }
       </div>
     </aside>
-    <main className="main-content" style={{flex:1,padding:"1.5rem",overflowY:"auto",minWidth:0}}>
+    <main className="main-content" style={{flex:1,padding:"1.5rem",overflowY:"auto",minWidth:0,paddingBottom:"5rem"}}>
       {page==="home"&&<PageHome sessions={sessions} poteFinal={poteFinal} standings={standings} balance={balance} temporada={temporada} setPage={setPage}/>}
       {page==="classificacao"&&<PageClassificacao standings={standings} sessions={sessions}/>}
       {page==="saldo"&&<PageSaldo sessions={sessions} players={players}/>}
@@ -1088,6 +1090,32 @@ function App(){
       {page==="nova"&&isAdmin&&<PageNova players={players} onSave={sess=>{update(prev=>({...prev,sessions:[...prev.sessions,sess],poteFinal:prev.poteFinal+(sess.poteFinalVal||0)}));setPage("partidas");}}/>}
       {page==="temporada"&&isAdmin&&<PageTemporada data={data} standings={standings} poteFinal={poteFinal} onConfirm={novoState=>{update(()=>novoState);setPage("home");}}/>}
     </main>
+
+    {/* ── MOBILE BOTTOM NAV ── */}
+    <nav className="mobile-nav" style={{display:"none",position:"fixed",bottom:0,left:0,right:0,background:"#000",borderTop:B,zIndex:100,overflowX:"auto",whiteSpace:"nowrap"}}>
+      <div style={{display:"inline-flex",gap:0,minWidth:"100%"}}>
+        {PAGES.map((p,i)=>{
+          const accent=NAV_ACCENT[i%NAV_ACCENT.length];
+          const active=page===p.id;
+          return(<button key={p.id} onClick={()=>setPage(p.id)} style={{display:"inline-flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,padding:"8px 14px",fontSize:9,cursor:"pointer",border:"none",borderTop:`3px solid ${active?accent:"transparent"}`,background:active?accent+"22":"transparent",color:active?"#fff":"#666",fontWeight:900,textTransform:"uppercase",letterSpacing:0.3,minWidth:60,flexShrink:0}}>
+            <span style={{fontSize:14}}>{p.icon}</span>
+            <span style={{fontSize:8}}>{p.label.split(" ")[0]}</span>
+          </button>);
+        })}
+      </div>
+    </nav>
+
+    {/* ── MOBILE ADMIN BUTTON ── */}
+    {!isAdmin&&(
+      <button className="mobile-admin-btn" onClick={()=>setShowLogin(true)} style={{display:"none",position:"fixed",bottom:70,right:16,width:44,height:44,background:"#7C6FF7",border:B,borderRadius:"50%",boxShadow:SH,cursor:"pointer",fontSize:16,fontWeight:900,zIndex:101,alignItems:"center",justifyContent:"center"}}>
+        ▶
+      </button>
+    )}
+    {isAdmin&&(
+      <button className="mobile-admin-btn" onClick={()=>{setMode("guest");setPage("home");}} style={{display:"none",position:"fixed",bottom:70,right:16,width:44,height:44,background:"#F97B6B",border:B,borderRadius:"50%",boxShadow:SH,cursor:"pointer",fontSize:12,fontWeight:900,zIndex:101,alignItems:"center",justifyContent:"center"}}>
+        ✕
+      </button>
+    )}
   </div>);
 }
 
