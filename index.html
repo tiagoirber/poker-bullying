@@ -772,7 +772,7 @@ function PageJogadores({players,isAdmin,onAdd}){
 function PageNova({players,onSave}){
   const [step,setStep]=useState(1);
   const [date,setDate]=useState(fmtDate(new Date().toISOString().slice(0,10)));
-  const [present,setPresent]=useState([]);
+  const [clickOrder,setClickOrder]=useState([]);
   const [ausentes,setAusentes]=useState([]);
   const [gastos,setGastos]=useState({});
   const [positions,setPositions]=useState({});
@@ -780,6 +780,16 @@ function PageNova({players,onSave}){
   const [gastoExtra,setGastoExtra]=useState(null);
   const [acordoTop3,setAcordoTop3]=useState("padrao");
   const [extrasSeq,setExtrasSeq]=useState([]);
+  const [ordemInvertida,setOrdemInvertida]=useState(false);
+
+  const present=clickOrder;
+
+  const calcPositions=(order,invertida)=>{
+    const pos={};
+    if(invertida){const total=order.length;order.forEach((p,i)=>{pos[p]=total-i;});}
+    else{order.forEach((p,i)=>{pos[p]=i+1;});}
+    return pos;
+  };
 
   const tP=present.reduce((s,p)=>s+(parseFloat(gastos[p])||0),0)+ausentes.length*BUYIN_AUSENTE;
   const tB=Object.keys(bountys).length*BOUNTY_VALUE;
@@ -791,27 +801,27 @@ function PageNova({players,onSave}){
   const top3=posList.slice(0,3).map(([n])=>n);
   const posicoesPosTop3=posList.slice(3);
 
-  // clique: nenhum → presente → ausente → nenhum
   const tog=p=>{
     if(ausentes.includes(p)){
       setAusentes(prev=>prev.filter(x=>x!==p));
-    } else if(present.includes(p)){
-      const np=present.filter(x=>x!==p);
-      setPresent(np);
-      const pos={};np.forEach((n,i)=>pos[n]=i+1);
-      setPositions(pos);
+    } else if(clickOrder.includes(p)){
+      setClickOrder(prev=>prev.filter(x=>x!==p));
       setAusentes(prev=>[...prev,p]);
+      setGastos(prev=>{const n={...prev};delete n[p];return n;});
     } else {
-      const np=[...present,p];
-      setPresent(np);
-      const pos={};np.forEach((n,i)=>pos[n]=i+1);
-      setPositions(pos);
+      setClickOrder(prev=>[...prev,p]);
     }
   };
-  const ok1=date&&present.length>=2;
-  const ok2=present.every(p=>gastos[p]&&parseFloat(gastos[p])>0);
-  const ok3=present.every(p=>positions[p]&&parseInt(positions[p])>0)&&new Set(Object.values(positions)).size===present.length;
-  const ok4=gastoExtra!==null; // respondeu à pergunta do gasto extra
+
+  const avancarPasso2=()=>{
+    const pos=calcPositions(clickOrder,ordemInvertida);
+    setPositions(pos);
+    setStep(2);
+  };
+
+  const ok1=date&&present.length>=2&&present.every(p=>gastos[p]&&parseFloat(gastos[p])>0);
+  const ok2=present.every(p=>positions[p]&&parseInt(positions[p])>0)&&new Set(Object.values(positions)).size===present.length;
+  const ok3=gastoExtra!==null;
   const bountyPorEl=getBountyPorEl(bountys);
   const totalExtras=extrasSeq.filter(e=>e.confirmado&&e.valor>0).reduce((s,e)=>s+e.valor,0);
 
@@ -827,19 +837,23 @@ function PageNova({players,onSave}){
 
   const calc=()=>{
     const g={};present.forEach(p=>g[p]=0);
+    ausentes.forEach(p=>{g[p]=0;});
     Object.entries(bountys).forEach(([,eliminador])=>{g[eliminador]=(g[eliminador]||0)+BOUNTY_VALUE;});
     const base=baseTop3();const tBase=base.reduce((s,x)=>s+x.v,0);
     base.forEach(({n,v})=>{if(!n)return;const desc=tBase>0?totalExtras*(v/tBase):0;g[n]=(g[n]||0)+v-desc;});
     extrasSeq.filter(e=>e.confirmado&&e.valor>0).forEach(e=>{g[e.nome]=(g[e.nome]||0)+e.valor;});
-    const sl={};present.forEach(p=>{sl[p]=(g[p]||0)-(parseFloat(gastos[p])||0);});
+    const sl={};
+    present.forEach(p=>{sl[p]=(g[p]||0)-(parseFloat(gastos[p])||0);});
+    ausentes.forEach(p=>{sl[p]=-BUYIN_AUSENTE;});
     const regulares=present.filter(p=>p!=="Avulso");
     const ptT=POINTS_TABLE[Math.min(regulares.length,12)]||POINTS_TABLE[12];
     const pts={};posList.filter(([n])=>n!=="Avulso").forEach(([n],i)=>{pts[n]=i<ptT.length?ptT[i]:0;});
     if(present.includes("Avulso"))pts["Avulso"]=0;
+    ausentes.forEach(p=>{pts[p]=0;});
     return{ganhos:g,saldos:sl,pts,poteFinalVal:pFV,totalPote:tP,totalBounty:tB,gastoExtraTotal:tGE,poteLiquido:pL,poteDistrib:pD};
   };
 
-  const STEPS=["Jogadores","Gastos","Posições","Bountys","Gasto Extra","Acordo","Resumo"];
+  const STEPS=["Jogadores + Gastos","Posicoes","Bountys","Gasto Extra","Acordo","Resumo"];
 
   return(<div>
     <div style={{marginBottom:20}}><div style={nb.title}>Nova Partida</div></div>
@@ -847,74 +861,138 @@ function PageNova({players,onSave}){
       <div style={{display:"flex",gap:4,marginBottom:8}}>{STEPS.map((s,i)=><div key={s} style={{flex:1,height:6,border:"2px solid #000",borderRadius:2,background:i<step-1?"#000":i===step-1?"#7C6FF7":"#e5e5e5"}}/>)}</div>
       <div style={{...nb.tag("#FBBF24"),marginBottom:14}}>Passo {step}/{STEPS.length} — {STEPS[step-1]}</div>
 
-      {/* PASSO 1 */}
       {step===1&&<div style={nb.card()}>
-        <div style={{marginBottom:14}}><label style={nb.label}>Data (DD/MM/AAAA)</label><input style={{...nb.inp,width:160}} value={date} onChange={e=>setDate(e.target.value)} placeholder="DD/MM/AAAA"/></div>
-        <label style={nb.label}>Clique para selecionar — ordem define posição</label>
-        <div style={{...nb.cardSm("#FBBF24"),marginBottom:10}}>
-          <div style={{fontSize:11,fontWeight:900}}>
-            1° clique = jogou (cor) · 2° clique = FALTOU (amarelo, paga R$40) · 3° clique = remove
+        <div style={{marginBottom:14}}>
+          <label style={nb.label}>Data (DD/MM/AAAA)</label>
+          <input style={{...nb.inp,width:160}} value={date} onChange={e=>setDate(e.target.value)} placeholder="DD/MM/AAAA"/>
+        </div>
+
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,padding:"10px 12px",border:B,borderRadius:R,background:ordemInvertida?"#000":"#fff",boxShadow:SH_SM,cursor:"pointer"}} onClick={()=>setOrdemInvertida(v=>!v)}>
+          <div style={{width:32,height:18,borderRadius:9,background:ordemInvertida?"#7C6FF7":"#e5e5e5",border:"2px solid #000",position:"relative",flexShrink:0}}>
+            <div style={{width:12,height:12,borderRadius:"50%",background:"#000",position:"absolute",top:1,left:ordemInvertida?16:2,transition:"left 0.15s"}}/>
+          </div>
+          <div>
+            <div style={{fontSize:11,fontWeight:900,color:ordemInvertida?"#fff":"#000",textTransform:"uppercase",letterSpacing:0.5}}>
+              {ordemInvertida?"Invertido: 1° clique = ultimo colocado":"Normal: 1° clique = 1° lugar"}
+            </div>
+            <div style={{fontSize:10,fontWeight:700,color:ordemInvertida?"#aaa":"#555"}}>
+              {ordemInvertida?"Posicoes calculadas ao avancar":"Clique do vencedor para o eliminado"}
+            </div>
           </div>
         </div>
-        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
+
+        <label style={nb.label}>Selecione os jogadores</label>
+        <div style={{...nb.cardSm(ordemInvertida?"#7C6FF7":"#FBBF24"),marginBottom:10}}>
+          <div style={{fontSize:11,fontWeight:900,color:ordemInvertida?"#fff":"#000"}}>
+            {ordemInvertida
+              ?"1 clique = 1 eliminado (ultimo) · 2 cliques = FALTOU · 3 cliques = remove"
+              :"1 clique = 1 lugar · 2 cliques = FALTOU (paga R$40) · 3 cliques = remove"
+            }
+          </div>
+        </div>
+
+        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
           {players.map(p=>{
-            const idx=present.indexOf(p);
+            const idx=clickOrder.indexOf(p);
             const ausente=ausentes.includes(p);
             const sel=idx>=0;
-            let bg="#fff", borderColor="#000", textColor="#000";
-            if(ausente){bg="#FBBF24";borderColor="#000";textColor="#000";}
-            else if(sel){bg=playerColor(p);borderColor="#000";textColor="#000";}
-            return(<button key={p} onClick={()=>tog(p)} style={{display:"inline-flex",alignItems:"center",gap:4,padding:"6px 12px",background:bg,border:`3px solid ${borderColor}`,borderRadius:4,boxShadow:"3px 3px 0 #000",cursor:"pointer",fontSize:11,fontWeight:900,color:textColor,textTransform:"uppercase",letterSpacing:1}}>
-              {sel&&!ausente&&<span style={{background:"#000",color:bg,borderRadius:2,padding:"1px 5px",fontSize:10}}>{idx+1}°</span>}
+            let bg="#fff";
+            if(ausente){bg="#FBBF24";}
+            else if(sel){bg=playerColor(p);}
+            const label=ordemInvertida?`${idx+1}e`:`${idx+1}`;
+            return(<button key={p} onClick={()=>tog(p)} style={{display:"inline-flex",alignItems:"center",gap:4,padding:"6px 12px",background:bg,border:B,borderRadius:R,boxShadow:SH_SM,cursor:"pointer",fontSize:11,fontWeight:900,color:"#000",textTransform:"uppercase",letterSpacing:1}}>
+              {sel&&!ausente&&<span style={{background:"#000",color:bg,borderRadius:2,padding:"1px 5px",fontSize:10}}>{label}</span>}
               {ausente&&<span style={{background:"#000",color:"#FBBF24",borderRadius:2,padding:"1px 5px",fontSize:10}}>FALTOU</span>}
               {p}
             </button>);
           })}
         </div>
-        {present.length>0&&<div style={{...nb.cardSm("#f0ebe0"),marginBottom:8}}><div style={{...nb.label,marginBottom:6}}>Presentes:</div><div style={{display:"flex",flexWrap:"wrap",gap:4}}>{present.map((p,i)=><span key={p} style={{...nb.tag(playerColor(p)),marginBottom:2}}>{i+1}º {p}</span>)}</div></div>}
-        {ausentes.length>0&&<div style={{...nb.cardSm("#FBBF24"),marginBottom:12}}><div style={{...nb.label,marginBottom:4}}>⚠️ Faltaram (pagam R$40 cada):</div><div style={{display:"flex",flexWrap:"wrap",gap:4}}>{ausentes.map(p=><span key={p} style={{...nb.tag("#000"),color:"#FBBF24",marginBottom:2}}>✕ {p}</span>)}</div><div style={{fontSize:11,fontWeight:900,marginTop:6}}>Multa total: {fmt(ausentes.length*BUYIN_AUSENTE)}</div></div>}
-        <button style={nb.btn("#7C6FF7")} onClick={()=>setStep(2)} disabled={!ok1}>Próximo →</button>
+
+        {clickOrder.length>0&&(
+          <div style={{...nb.cardSm("#f0ebe0"),marginBottom:10}}>
+            <div style={{...nb.label,marginBottom:8}}>
+              {ordemInvertida?"Ordem de eliminacao (posicoes calculadas ao avancar):":"Jogadores selecionados:"}
+            </div>
+            {clickOrder.map((p,i)=>(
+              <div key={p} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                <span style={{...nb.tag(ordemInvertida?"#7C6FF7":playerColor(p)),minWidth:44,textAlign:"center",fontSize:10}}>
+                  {ordemInvertida?`${i+1} elim`:`${i+1} lugar`}
+                </span>
+                <Av name={p} size={24}/>
+                <span style={{flex:1,fontSize:12,fontWeight:900}}>{p}</span>
+                <span style={{fontWeight:900,fontSize:12}}>R$</span>
+                <input
+                  style={{...nb.inp,width:72}}
+                  type="number" min="0" step="10" placeholder="0"
+                  value={gastos[p]||""}
+                  onChange={e=>setGastos(prev=>({...prev,[p]:e.target.value}))}
+                />
+              </div>
+            ))}
+            {tP>0&&<div style={{...nb.tag("#4FC9A4"),marginTop:4}}>Pote presentes: {fmt(tP-ausentes.length*BUYIN_AUSENTE)}</div>}
+          </div>
+        )}
+
+        {ausentes.length>0&&(
+          <div style={{...nb.cardSm("#FBBF24"),marginBottom:12}}>
+            <div style={{...nb.label,marginBottom:4}}>Faltaram (pagam R$40 cada):</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+              {ausentes.map(p=><span key={p} style={{...nb.tag("#000"),color:"#FBBF24",marginBottom:2}}>FALTOU: {p}</span>)}
+            </div>
+            <div style={{fontSize:11,fontWeight:900,marginTop:6}}>Multa: {fmt(ausentes.length*BUYIN_AUSENTE)}</div>
+          </div>
+        )}
+
+        {present.length>=2&&!ok1&&(
+          <div style={{...nb.tag("#F97B6B"),marginBottom:10}}>Preencha o gasto de todos os jogadores.</div>
+        )}
+
+        <button style={nb.btn("#7C6FF7")} onClick={avancarPasso2} disabled={!ok1}>Proximo</button>
       </div>}
 
-      {/* PASSO 2 */}
       {step===2&&<div style={nb.card()}>
-        {present.map(p=><div key={p} className="nova-row" style={{display:"grid",gridTemplateColumns:"auto 1fr auto auto",gap:"6px 8px",alignItems:"center",marginBottom:8}}><Av name={p}/><span style={{fontSize:13,fontWeight:700}}>{p}</span><span style={{fontWeight:900}}>R$</span><input style={{...nb.inp,width:80}} type="number" min="0" step="10" placeholder="0" value={gastos[p]||""} onChange={e=>setGastos(prev=>({...prev,[p]:e.target.value}))}/></div>)}
-        <div style={{...nb.tag("#4FC9A4"),margin:"10px 0"}}>Pote total: {fmt(tP)}</div>
-        <div style={{display:"flex",gap:6,marginTop:10}}><button style={nb.btn()} onClick={()=>setStep(1)}>← Voltar</button><button style={nb.btn("#7C6FF7")} onClick={()=>setStep(3)} disabled={!ok2}>Próximo →</button></div>
+        <div style={{fontSize:11,fontWeight:700,color:"#555",marginBottom:12}}>
+          {ordemInvertida?"Posicoes calculadas pela ordem invertida. Ajuste se necessario.":"Posicoes pela ordem de selecao. Ajuste se necessario."}
+        </div>
+        {posList.map(([p,pos])=>(
+          <div key={p} className="nova-row" style={{display:"grid",gridTemplateColumns:"auto 1fr auto",gap:"6px 8px",alignItems:"center",marginBottom:8}}>
+            <Av name={p}/>
+            <span style={{fontSize:13,fontWeight:700}}>{p}</span>
+            <input style={{...nb.inp,width:70}} type="number" min="1" max={present.length} value={positions[p]||""} onChange={e=>setPositions(prev=>({...prev,[p]:e.target.value}))}/>
+          </div>
+        ))}
+        {!ok2&&<div style={{...nb.tag("#F97B6B"),marginBottom:8}}>Posicoes devem ser unicas.</div>}
+        <div style={{display:"flex",gap:6,marginTop:10}}>
+          <button style={nb.btn()} onClick={()=>setStep(1)}>Voltar</button>
+          <button style={nb.btn("#7C6FF7")} onClick={()=>setStep(3)} disabled={!ok2}>Proximo</button>
+        </div>
       </div>}
 
-      {/* PASSO 3 */}
       {step===3&&<div style={nb.card()}>
-        <div style={{fontSize:11,fontWeight:700,color:"#555",marginBottom:12}}>Posições preenchidas automaticamente. Ajuste se necessário.</div>
-        {present.map(p=><div key={p} className="nova-row" style={{display:"grid",gridTemplateColumns:"auto 1fr auto",gap:"6px 8px",alignItems:"center",marginBottom:8}}><Av name={p}/><span style={{fontSize:13,fontWeight:700}}>{p}</span><input style={{...nb.inp,width:70}} type="number" min="1" max={present.length} value={positions[p]||""} onChange={e=>setPositions(prev=>({...prev,[p]:e.target.value}))}/></div>)}
-        {!ok3&&<div style={{...nb.tag("#F97B6B"),marginBottom:8}}>Posições devem ser únicas.</div>}
-        <div style={{display:"flex",gap:6,marginTop:10}}><button style={nb.btn()} onClick={()=>setStep(2)}>← Voltar</button><button style={nb.btn("#7C6FF7")} onClick={()=>setStep(4)} disabled={!ok3}>Próximo →</button></div>
-      </div>}
-
-      {/* PASSO 4 — BOUNTYS */}
-      {step===4&&<div style={nb.card()}>
-        <div style={{...nb.label,marginBottom:4}}>Quem eliminou quem? (R$10 por eliminação)</div>
-        <div style={{fontSize:11,fontWeight:700,color:"#555",marginBottom:12}}>Todos exceto os 3 primeiros colocados podem ter sido eliminados por qualquer jogador.</div>
+        <div style={{...nb.label,marginBottom:4}}>Quem eliminou quem? (R$10 por eliminacao)</div>
+        <div style={{fontSize:11,fontWeight:700,color:"#555",marginBottom:12}}>Todos exceto os 3 primeiros podem ter sido eliminados por qualquer jogador.</div>
         {posList.filter(([,pos])=>parseInt(pos)>3).map(([eliminado,pos])=>(
           <div key={eliminado} style={{marginBottom:10,paddingBottom:10,borderBottom:"2px dashed #ccc"}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-              <div style={{...nb.tag("#e5e5e5"),minWidth:28,textAlign:"center"}}>{pos}º</div>
+              <div style={{...nb.tag("#e5e5e5"),minWidth:28,textAlign:"center"}}>{pos}.</div>
               <Av name={eliminado} size={24}/>
               <span style={{fontSize:12,fontWeight:700}}>{eliminado} foi elim. por:</span>
             </div>
             <select style={{...nb.sel,width:"100%"}} value={bountys[eliminado]||""} onChange={e=>{const val=e.target.value;setBountys(prev=>{const next={...prev};if(val)next[eliminado]=val;else delete next[eliminado];return next;})}}>
-              <option value="">— ninguém —</option>
+              <option value="">ninguem</option>
               {present.filter(p=>p!==eliminado).map(p=><option key={p} value={p}>{p}</option>)}
             </select>
           </div>
         ))}
-        {Object.keys(bountyPorEl).length>0&&(<div style={{...nb.cardSm("#FBBF24"),marginBottom:12}}><div style={{...nb.label,marginBottom:6}}>Resumo de bountys:</div>{Object.entries(bountyPorEl).map(([el,elims])=>(<div key={el} style={{fontSize:11,fontWeight:700,marginBottom:3}}>{el} eliminou {elims.join(", ")} → {fmt(elims.length*BOUNTY_VALUE)}</div>))}<div style={{fontWeight:900,marginTop:6}}>Total: {fmt(tB)}</div></div>)}
+        {Object.keys(bountyPorEl).length>0&&(<div style={{...nb.cardSm("#FBBF24"),marginBottom:12}}>{Object.entries(bountyPorEl).map(([el,elims])=>(<div key={el} style={{fontSize:11,fontWeight:700,marginBottom:3}}>{el} eliminou {elims.join(", ")} = {fmt(elims.length*BOUNTY_VALUE)}</div>))}<div style={{fontWeight:900,marginTop:6}}>Total: {fmt(tB)}</div></div>)}
         <div style={{...nb.tag("#4FC9A4"),margin:"8px 0"}}>Bountys: {fmt(tB)}</div>
-        <div style={{display:"flex",gap:6,marginTop:10}}><button style={nb.btn()} onClick={()=>setStep(3)}>← Voltar</button><button style={nb.btn("#7C6FF7")} onClick={()=>setStep(5)}>Próximo →</button></div>
+        <div style={{display:"flex",gap:6,marginTop:10}}>
+          <button style={nb.btn()} onClick={()=>setStep(2)}>Voltar</button>
+          <button style={nb.btn("#7C6FF7")} onClick={()=>setStep(4)}>Proximo</button>
+        </div>
       </div>}
 
-      {/* PASSO 5 — GASTO EXTRA */}
-      {step===5&&<div style={nb.card()}>
+      {step===4&&<div style={nb.card()}>
         <GastoExtraWidget gastoExtra={gastoExtra} onChange={setGastoExtra}/>
         {gastoExtra!==null&&(
           <div style={{...nb.cardSm("#e5e5e5"),marginTop:12}}>
@@ -922,74 +1000,74 @@ function PageNova({players,onSave}){
               Pote total: {fmt(tP)}<br/>
               {tB>0&&<>(-) Bountys: {fmt(tB)}<br/></>}
               {tGE>0&&<>(-) {gastoExtra?.descricao||"Gasto extra"}: {fmt(tGE)}<br/></>}
-              = Pote líquido: {fmt(pL)}<br/>
+              = Pote liquido: {fmt(pL)}<br/>
               (-) Pote final 10%: {fmt(pFV)}<br/>
               = Pote a distribuir: {fmt(pD)}
             </div>
           </div>
         )}
         <div style={{display:"flex",gap:6,marginTop:14}}>
-          <button style={nb.btn()} onClick={()=>setStep(4)}>← Voltar</button>
-          <button style={nb.btn("#7C6FF7")} onClick={()=>{initExtras();setStep(6);}} disabled={!ok4}>Próximo →</button>
+          <button style={nb.btn()} onClick={()=>setStep(3)}>Voltar</button>
+          <button style={nb.btn("#7C6FF7")} onClick={()=>{initExtras();setStep(5);}} disabled={!ok3}>Proximo</button>
         </div>
       </div>}
 
-      {/* PASSO 6 — ACORDO */}
-      {step===6&&<div style={nb.card()}>
+      {step===5&&<div style={nb.card()}>
         <div style={{fontWeight:900,marginBottom:4}}>Pote a distribuir: {fmt(pD)}</div>
-        <div style={{fontWeight:700,color:"#555",marginBottom:12,fontSize:11}}>Top 3: {top3.join(", ")||"—"}</div>
-        <div style={{...nb.label,marginBottom:8}}>Divisão do top 3:</div>
-        {[{id:"padrao",label:"Padrão: 40% / 30% / 20%"},{id:"divisao12",label:"Acordo 1º e 2º + 3º 20%"},{id:"divisao123",label:"Acordo 3 dividem igual"}].map(o=>(
+        <div style={{fontWeight:700,color:"#555",marginBottom:12,fontSize:11}}>Top 3: {top3.join(", ")||"?"}</div>
+        <div style={{...nb.label,marginBottom:8}}>Divisao do top 3:</div>
+        {[{id:"padrao",label:"Padrao: 40% / 30% / 20%"},{id:"divisao12",label:"Acordo 1 e 2 + 3 20%"},{id:"divisao123",label:"Acordo 3 dividem igual"}].map(o=>(
           <label key={o.id} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 12px",border:B,borderRadius:R,cursor:"pointer",fontSize:12,fontWeight:700,marginBottom:6,background:acordoTop3===o.id?"#7C6FF7":"#fff",boxShadow:SH_SM}}>
             <input type="radio" name="ac" checked={acordoTop3===o.id} onChange={()=>setAcordoTop3(o.id)} style={{accentColor:"#000"}}/>{o.label}
           </label>
         ))}
         {posicoesPosTop3.length>0&&<>
-          <div style={{...nb.label,marginTop:14,marginBottom:8}}>Premiação extra:</div>
+          <div style={{...nb.label,marginTop:14,marginBottom:8}}>Premiacao extra:</div>
           {extrasSeq.map((e,idx)=>(
             <div key={idx} style={{...nb.cardSm("#f0ebe0"),marginBottom:8}}>
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:e.confirmado===true?8:0}}>
-                <div style={{...nb.tag("#e5e5e5"),minWidth:28,textAlign:"center"}}>{e.pos}º</div>
+                <div style={{...nb.tag("#e5e5e5"),minWidth:28,textAlign:"center"}}>{e.pos}.</div>
                 <Av name={e.nome} size={22}/>
-                <span style={{flex:1,fontSize:12,fontWeight:700}}>{e.nome} recebeu premiação?</span>
-                {e.confirmado===null&&<><button style={nb.btn("#4FC9A4")} onClick={()=>confirmarExtra(idx,true)}>Sim</button><button style={nb.btn("#F97B6B")} onClick={()=>confirmarExtra(idx,false)}>Não</button></>}
-                {e.confirmado!==null&&<button style={{...nb.btn(),fontSize:10,padding:"4px 8px"}} onClick={()=>desfazerExtra(idx)}>✕</button>}
+                <span style={{flex:1,fontSize:12,fontWeight:700}}>{e.nome} recebeu premiacao?</span>
+                {e.confirmado===null&&<><button style={nb.btn("#4FC9A4")} onClick={()=>confirmarExtra(idx,true)}>Sim</button><button style={nb.btn("#F97B6B")} onClick={()=>confirmarExtra(idx,false)}>Nao</button></>}
+                {e.confirmado!==null&&<button style={{...nb.btn(),fontSize:10,padding:"4px 8px"}} onClick={()=>desfazerExtra(idx)}>X</button>}
               </div>
               {e.confirmado===true&&(<div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontWeight:900}}>R$</span><input style={{...nb.inp,width:100}} type="number" min="0" value={e.valor||""} onChange={ev=>setExtrasSeq(prev=>{const next=[...prev];next[idx]={...next[idx],valor:parseFloat(ev.target.value)||0};return next;})}/>{e.valor>0&&<span style={nb.tag("#FBBF24")}>{fmt(e.valor)}</span>}</div>)}
-              {e.confirmado===false&&<div style={{fontSize:11,fontWeight:700,color:"#555",marginTop:4}}>Sem premiação extra.</div>}
+              {e.confirmado===false&&<div style={{fontSize:11,fontWeight:700,color:"#555",marginTop:4}}>Sem premiacao extra.</div>}
             </div>
           ))}
-          {extrasSeq.length===0&&<button style={nb.btn("#FBBF24")} onClick={initExtras}>+ Verificar premiação extra</button>}
+          {extrasSeq.length===0&&<button style={nb.btn("#FBBF24")} onClick={initExtras}>+ Verificar premiacao extra</button>}
         </>}
-        {totalExtras>0&&(<div style={{...nb.cardSm("#e5e5e5"),marginTop:10}}><div style={{fontWeight:900,marginBottom:6}}>Desconto proporcional do top 3:</div>{baseTop3().map(({n,v})=>{if(!n)return null;const tBase=baseTop3().reduce((s,x)=>s+x.v,0);const desc=tBase>0?totalExtras*(v/tBase):0;return <div key={n} style={{fontSize:11,fontWeight:700,marginBottom:3}}>{n}: {fmt(v)} - {fmt(desc)} = <strong>{fmt(v-desc)}</strong></div>;})}</div>)}
-        <div style={{display:"flex",gap:6,marginTop:14}}><button style={nb.btn()} onClick={()=>setStep(5)}>← Voltar</button><button style={nb.btn("#7C6FF7")} onClick={()=>setStep(7)}>Ver resumo →</button></div>
+        {totalExtras>0&&(<div style={{...nb.cardSm("#e5e5e5"),marginTop:10}}><div style={{fontWeight:900,marginBottom:6}}>Desconto proporcional top 3:</div>{baseTop3().map(({n,v})=>{if(!n)return null;const tBase=baseTop3().reduce((s,x)=>s+x.v,0);const desc=tBase>0?totalExtras*(v/tBase):0;return <div key={n} style={{fontSize:11,fontWeight:700,marginBottom:3}}>{n}: {fmt(v)} - {fmt(desc)} = <strong>{fmt(v-desc)}</strong></div>;})}</div>)}
+        <div style={{display:"flex",gap:6,marginTop:14}}>
+          <button style={nb.btn()} onClick={()=>setStep(4)}>Voltar</button>
+          <button style={nb.btn("#7C6FF7")} onClick={()=>setStep(6)}>Ver resumo</button>
+        </div>
       </div>}
 
-      {/* PASSO 7 — RESUMO */}
-      {step===7&&(()=>{
+      {step===6&&(()=>{
         const res=calc();
         return(<div style={nb.card()}>
           <div className="grid-3" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:12}}>
             <div style={nb.cardSm()}><div style={nb.label}>Pote total</div><div style={{fontWeight:900}}>{fmt(res.totalPote)}</div></div>
             <div style={nb.cardSm("#7C6FF7")}><div style={nb.label}>Pote Final 10%</div><div style={{fontWeight:900}}>{fmt(res.poteFinalVal)}</div></div>
-            <div style={nb.cardSm()}><div style={nb.label}>Distribuído</div><div style={{fontWeight:900}}>{fmt(res.poteDistrib)}</div></div>
+            <div style={nb.cardSm()}><div style={nb.label}>Distribuido</div><div style={{fontWeight:900}}>{fmt(res.poteDistrib)}</div></div>
           </div>
-          {tGE>0&&<div style={{...nb.cardSm("#F97B6B"),marginBottom:12}}><span style={{fontWeight:900}}>🧾 Gasto extra ({gastoExtra?.descricao}): {fmt(tGE)}</span></div>}
-          {ausentes.length>0&&<div style={{...nb.cardSm("#FBBF24"),marginBottom:12}}><span style={{fontWeight:900}}>⚠️ Faltaram: {ausentes.join(", ")} — multa {fmt(ausentes.length*BUYIN_AUSENTE)}</span></div>}
+          {tGE>0&&<div style={{...nb.cardSm("#F97B6B"),marginBottom:12}}><span style={{fontWeight:900}}>Gasto extra ({gastoExtra?.descricao}): {fmt(tGE)}</span></div>}
+          {ausentes.length>0&&<div style={{...nb.cardSm("#FBBF24"),marginBottom:12}}><span style={{fontWeight:900}}>FALTARAM: {ausentes.join(", ")} - multa {fmt(ausentes.length*BUYIN_AUSENTE)}</span></div>}
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginBottom:12}}>
             <thead><tr style={{borderBottom:B}}>{["Jogador","Pos.","Gasto","Ganhou","Saldo","Pts"].map(h=><th key={h} style={{padding:"6px 8px",textAlign:"left",fontWeight:900,fontSize:10,textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
-            <tbody>{posList.map(([n,pos],i)=>{const sl=res.saldos[n];return(<tr key={n} style={{borderBottom:"2px dashed #ccc",background:i%2===0?"#fff":"#faf8f4"}}><td style={{padding:"8px"}}><div style={{display:"flex",alignItems:"center",gap:6}}><Av name={n} size={22}/><span style={{fontWeight:900}}>{n}</span></div></td><td style={{padding:"8px"}}><span style={nb.tag("#e5e5e5")}>{pos}</span></td><td style={{padding:"8px",fontWeight:700,color:"#555"}}>{fmt(gastos[n]||0)}</td><td style={{padding:"8px",fontWeight:700}}>{fmt(res.ganhos[n]||0)}</td><td style={{padding:"8px"}}><span style={nb.tag(sl>=0?"#4FC9A4":"#F97B6B")}>{fmt(sl)}</span></td><td style={{padding:"8px",fontWeight:700,color:"#555"}}>{n!=="Avulso"?fmtPts(res.pts[n]||0):"—"}</td></tr>);})}</tbody>
+            <tbody>{posList.map(([n,pos],i)=>{const sl=res.saldos[n];return(<tr key={n} style={{borderBottom:"2px dashed #ccc",background:i%2===0?"#fff":"#faf8f4"}}><td style={{padding:"8px"}}><div style={{display:"flex",alignItems:"center",gap:6}}><Av name={n} size={22}/><span style={{fontWeight:900}}>{n}</span></div></td><td style={{padding:"8px"}}><span style={nb.tag("#e5e5e5")}>{pos}</span></td><td style={{padding:"8px",fontWeight:700,color:"#555"}}>{fmt(gastos[n]||0)}</td><td style={{padding:"8px",fontWeight:700}}>{fmt(res.ganhos[n]||0)}</td><td style={{padding:"8px"}}><span style={nb.tag(sl>=0?"#4FC9A4":"#F97B6B")}>{fmt(sl)}</span></td><td style={{padding:"8px",fontWeight:700,color:"#555"}}>{n!=="Avulso"?fmtPts(res.pts[n]||0):"?"}</td></tr>);})}</tbody>
           </table>
           <div style={{display:"flex",gap:6}}>
-            <button style={nb.btn()} onClick={()=>setStep(6)}>← Voltar</button>
-            <button style={nb.btn("#4FC9A4")} onClick={()=>{const r=calc();onSave({id:Date.now(),date:toISO(date),present,ausentes,gastos,positions,bountys,gastoExtra:gastoExtra?.confirmado===true?gastoExtra:null,acordoDetails:{tipo:acordoTop3,extras:Object.fromEntries(extrasSeq.filter(e=>e.confirmado&&e.valor>0).map(e=>[e.nome,e.valor]))},totalBounty:tB,...r});}}>✓ Salvar partida</button>
+            <button style={nb.btn()} onClick={()=>setStep(5)}>Voltar</button>
+            <button style={nb.btn("#4FC9A4")} onClick={()=>{const r=calc();onSave({id:Date.now(),date:toISO(date),present,ausentes,gastos,positions,bountys,gastoExtra:gastoExtra?.confirmado===true?gastoExtra:null,acordoDetails:{tipo:acordoTop3,extras:Object.fromEntries(extrasSeq.filter(e=>e.confirmado&&e.valor>0).map(e=>[e.nome,e.valor]))},totalBounty:tB,...r});}}>Salvar partida</button>
           </div>
         </div>);
       })()}
     </div>
   </div>);
 }
-
 // ── PAGE: NOVA TEMPORADA ───────────────────────────────────
 function PageTemporada({data,standings,poteFinal,onConfirm}){
   const [conf,setConf]=useState(false);const [ano,setAno]=useState(new Date().getFullYear()+1);
