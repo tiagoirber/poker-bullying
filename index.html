@@ -853,7 +853,7 @@ function PageNova({players,onSave}){
     return{ganhos:g,saldos:sl,pts,poteFinalVal:pFV,totalPote:tP,totalBounty:tB,gastoExtraTotal:tGE,poteLiquido:pL,poteDistrib:pD};
   };
 
-  const STEPS=["Jogadores + Gastos","Posicoes","Bountys","Gasto Extra","Acordo","Resumo"];
+  const STEPS=["Jogadores + Gastos + Bountys","Posicoes","Gasto Extra","Acordo","Resumo"];
 
   return(<div>
     <div style={{marginBottom:20}}><div style={nb.title}>Nova Partida</div></div>
@@ -914,22 +914,34 @@ function PageNova({players,onSave}){
               {ordemInvertida?"Ordem de eliminacao (posicoes calculadas ao avancar):":"Jogadores selecionados:"}
             </div>
             {clickOrder.map((p,i)=>(
-              <div key={p} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-                <span style={{...nb.tag(ordemInvertida?"#7C6FF7":playerColor(p)),minWidth:44,textAlign:"center",fontSize:10}}>
-                  {ordemInvertida?`${i+1} elim`:`${i+1} lugar`}
-                </span>
-                <Av name={p} size={24}/>
-                <span style={{flex:1,fontSize:12,fontWeight:900}}>{p}</span>
-                <span style={{fontWeight:900,fontSize:12}}>R$</span>
-                <input
-                  style={{...nb.inp,width:72}}
-                  type="number" min="0" step="10" placeholder="0"
-                  value={gastos[p]||""}
-                  onChange={e=>setGastos(prev=>({...prev,[p]:e.target.value}))}
-                />
+              <div key={p} style={{borderBottom:"2px dashed #ddd",paddingBottom:10,marginBottom:10}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                  <span style={{...nb.tag(ordemInvertida?"#7C6FF7":playerColor(p)),minWidth:44,textAlign:"center",fontSize:10}}>
+                    {ordemInvertida?`${i+1} elim`:`${i+1} lugar`}
+                  </span>
+                  <Av name={p} size={24}/>
+                  <span style={{flex:1,fontSize:12,fontWeight:900}}>{p}</span>
+                  <span style={{fontWeight:900,fontSize:12}}>R$</span>
+                  <input
+                    style={{...nb.inp,width:72}}
+                    type="number" min="0" step="10" placeholder="0"
+                    value={gastos[p]||""}
+                    onChange={e=>setGastos(prev=>({...prev,[p]:e.target.value}))}
+                  />
+                </div>
+                {(
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:10,fontWeight:900,color:"#555",minWidth:44}}>Elim. por:</span>
+                    <select style={{...nb.sel,flex:1,fontSize:11}} value={bountys[p]||""} onChange={e=>{const val=e.target.value;setBountys(prev=>{const next={...prev};if(val)next[p]=val;else delete next[p];return next;})}}>
+                      <option value="">— ninguem —</option>
+                      {clickOrder.filter(x=>x!==p).map(x=><option key={x} value={x}>{x}</option>)}
+                    </select>
+                  </div>
+                )}
               </div>
             ))}
             {tP>0&&<div style={{...nb.tag("#4FC9A4"),marginTop:4}}>Pote presentes: {fmt(tP-ausentes.length*BUYIN_AUSENTE)}</div>}
+            {tB>0&&<div style={{...nb.tag("#FBBF24"),marginTop:4}}>Bountys: {fmt(tB)}</div>}
           </div>
         )}
 
@@ -969,30 +981,6 @@ function PageNova({players,onSave}){
       </div>}
 
       {step===3&&<div style={nb.card()}>
-        <div style={{...nb.label,marginBottom:4}}>Quem eliminou quem? (R$10 por eliminacao)</div>
-        <div style={{fontSize:11,fontWeight:700,color:"#555",marginBottom:12}}>Todos exceto os 3 primeiros podem ter sido eliminados por qualquer jogador.</div>
-        {posList.filter(([,pos])=>parseInt(pos)>3).map(([eliminado,pos])=>(
-          <div key={eliminado} style={{marginBottom:10,paddingBottom:10,borderBottom:"2px dashed #ccc"}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-              <div style={{...nb.tag("#e5e5e5"),minWidth:28,textAlign:"center"}}>{pos}.</div>
-              <Av name={eliminado} size={24}/>
-              <span style={{fontSize:12,fontWeight:700}}>{eliminado} foi elim. por:</span>
-            </div>
-            <select style={{...nb.sel,width:"100%"}} value={bountys[eliminado]||""} onChange={e=>{const val=e.target.value;setBountys(prev=>{const next={...prev};if(val)next[eliminado]=val;else delete next[eliminado];return next;})}}>
-              <option value="">ninguem</option>
-              {present.filter(p=>p!==eliminado).map(p=><option key={p} value={p}>{p}</option>)}
-            </select>
-          </div>
-        ))}
-        {Object.keys(bountyPorEl).length>0&&(<div style={{...nb.cardSm("#FBBF24"),marginBottom:12}}>{Object.entries(bountyPorEl).map(([el,elims])=>(<div key={el} style={{fontSize:11,fontWeight:700,marginBottom:3}}>{el} eliminou {elims.join(", ")} = {fmt(elims.length*BOUNTY_VALUE)}</div>))}<div style={{fontWeight:900,marginTop:6}}>Total: {fmt(tB)}</div></div>)}
-        <div style={{...nb.tag("#4FC9A4"),margin:"8px 0"}}>Bountys: {fmt(tB)}</div>
-        <div style={{display:"flex",gap:6,marginTop:10}}>
-          <button style={nb.btn()} onClick={()=>setStep(2)}>Voltar</button>
-          <button style={nb.btn("#7C6FF7")} onClick={()=>setStep(4)}>Proximo</button>
-        </div>
-      </div>}
-
-      {step===4&&<div style={nb.card()}>
         <GastoExtraWidget gastoExtra={gastoExtra} onChange={setGastoExtra}/>
         {gastoExtra!==null&&(
           <div style={{...nb.cardSm("#e5e5e5"),marginTop:12}}>
@@ -1007,12 +995,12 @@ function PageNova({players,onSave}){
           </div>
         )}
         <div style={{display:"flex",gap:6,marginTop:14}}>
-          <button style={nb.btn()} onClick={()=>setStep(3)}>Voltar</button>
-          <button style={nb.btn("#7C6FF7")} onClick={()=>{initExtras();setStep(5);}} disabled={!ok3}>Proximo</button>
+          <button style={nb.btn()} onClick={()=>setStep(2)}>Voltar</button>
+          <button style={nb.btn("#7C6FF7")} onClick={()=>{initExtras();setStep(4);}} disabled={!ok3}>Proximo</button>
         </div>
       </div>}
 
-      {step===5&&<div style={nb.card()}>
+      {step===4&&<div style={nb.card()}>
         <div style={{fontWeight:900,marginBottom:4}}>Pote a distribuir: {fmt(pD)}</div>
         <div style={{fontWeight:700,color:"#555",marginBottom:12,fontSize:11}}>Top 3: {top3.join(", ")||"?"}</div>
         <div style={{...nb.label,marginBottom:8}}>Divisao do top 3:</div>
@@ -1040,12 +1028,12 @@ function PageNova({players,onSave}){
         </>}
         {totalExtras>0&&(<div style={{...nb.cardSm("#e5e5e5"),marginTop:10}}><div style={{fontWeight:900,marginBottom:6}}>Desconto proporcional top 3:</div>{baseTop3().map(({n,v})=>{if(!n)return null;const tBase=baseTop3().reduce((s,x)=>s+x.v,0);const desc=tBase>0?totalExtras*(v/tBase):0;return <div key={n} style={{fontSize:11,fontWeight:700,marginBottom:3}}>{n}: {fmt(v)} - {fmt(desc)} = <strong>{fmt(v-desc)}</strong></div>;})}</div>)}
         <div style={{display:"flex",gap:6,marginTop:14}}>
-          <button style={nb.btn()} onClick={()=>setStep(4)}>Voltar</button>
-          <button style={nb.btn("#7C6FF7")} onClick={()=>setStep(6)}>Ver resumo</button>
+          <button style={nb.btn()} onClick={()=>setStep(3)}>Voltar</button>
+          <button style={nb.btn("#7C6FF7")} onClick={()=>setStep(5)}>Ver resumo</button>
         </div>
       </div>}
 
-      {step===6&&(()=>{
+      {step===5&&(()=>{
         const res=calc();
         return(<div style={nb.card()}>
           <div className="grid-3" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:12}}>
@@ -1060,7 +1048,7 @@ function PageNova({players,onSave}){
             <tbody>{posList.map(([n,pos],i)=>{const sl=res.saldos[n];return(<tr key={n} style={{borderBottom:"2px dashed #ccc",background:i%2===0?"#fff":"#faf8f4"}}><td style={{padding:"8px"}}><div style={{display:"flex",alignItems:"center",gap:6}}><Av name={n} size={22}/><span style={{fontWeight:900}}>{n}</span></div></td><td style={{padding:"8px"}}><span style={nb.tag("#e5e5e5")}>{pos}</span></td><td style={{padding:"8px",fontWeight:700,color:"#555"}}>{fmt(gastos[n]||0)}</td><td style={{padding:"8px",fontWeight:700}}>{fmt(res.ganhos[n]||0)}</td><td style={{padding:"8px"}}><span style={nb.tag(sl>=0?"#4FC9A4":"#F97B6B")}>{fmt(sl)}</span></td><td style={{padding:"8px",fontWeight:700,color:"#555"}}>{n!=="Avulso"?fmtPts(res.pts[n]||0):"?"}</td></tr>);})}</tbody>
           </table>
           <div style={{display:"flex",gap:6}}>
-            <button style={nb.btn()} onClick={()=>setStep(5)}>Voltar</button>
+            <button style={nb.btn()} onClick={()=>setStep(4)}>Voltar</button>
             <button style={nb.btn("#4FC9A4")} onClick={()=>{const r=calc();onSave({id:Date.now(),date:toISO(date),present,ausentes,gastos,positions,bountys,gastoExtra:gastoExtra?.confirmado===true?gastoExtra:null,acordoDetails:{tipo:acordoTop3,extras:Object.fromEntries(extrasSeq.filter(e=>e.confirmado&&e.valor>0).map(e=>[e.nome,e.valor]))},totalBounty:tB,...r});}}>Salvar partida</button>
           </div>
         </div>);
