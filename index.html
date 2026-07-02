@@ -20,6 +20,10 @@
     .grid-4{grid-template-columns:1fr 1fr!important;}
     .grid-2{grid-template-columns:1fr!important;}
     .grid-3{grid-template-columns:1fr 1fr!important;}
+    .mobile-nav{display:block!important;}
+    .mobile-admin-btn{display:flex!important;}
+    .nova-row-edit{grid-template-columns:auto 1fr 60px 65px!important;}
+    .step-max{max-width:100%!important;}
   }
 </style>
 </head>
@@ -1216,7 +1220,7 @@ function App(){
         }
       </div>
     </aside>
-    <main className="main-content" style={{flex:1,padding:"1.5rem",overflowY:"auto",minWidth:0}}>
+    <main className="main-content" style={{flex:1,padding:"1.5rem",overflowY:"auto",minWidth:0,paddingBottom:"5rem"}}>
       {page==="home"&&<PageHome sessions={sessions} poteFinal={poteFinal} standings={standings} balance={balance} temporada={temporada} setPage={setPage}/>}
       {page==="classificacao"&&<PageClassificacao standings={standings} sessions={sessions}/>}
       {page==="saldo"&&<PageSaldo sessions={sessions} players={players}/>}
@@ -1229,6 +1233,35 @@ function App(){
       {page==="nova"&&isAdmin&&<PageNova players={players} onSave={sess=>{update(prev=>({...prev,sessions:[...prev.sessions,sess],poteFinal:prev.poteFinal+(sess.poteFinalVal||0)}));setPage("partidas");}}/>}
       {page==="temporada"&&isAdmin&&<PageTemporada data={data} standings={standings} poteFinal={poteFinal} onConfirm={novoState=>{update(()=>novoState);setPage("home");}}/>}
     </main>
+
+    {/* ── MOBILE BOTTOM NAV ── */}
+    <nav className="mobile-nav" style={{display:"none",position:"fixed",bottom:0,left:0,right:0,background:"#000",borderTop:B,zIndex:100,overflowX:"scroll",WebkitOverflowScrolling:"touch"}}>
+      <div style={{display:"flex",flexDirection:"row",width:"max-content",minWidth:"100%"}}>
+        {PAGES.map((p,i)=>{
+          const accent=NAV_ACCENT[i%NAV_ACCENT.length];
+          const active=page===p.id;
+          const isAdminPage=p.id==="nova"||p.id==="temporada";
+          return(<button key={p.id} onClick={()=>setPage(p.id)} style={{display:"inline-flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,padding:"10px 16px",fontSize:9,cursor:"pointer",border:"none",borderTop:`3px solid ${active?accent:isAdminPage?"#333":"transparent"}`,background:active?accent+"33":isAdminPage?"#111":"transparent",color:active?"#fff":isAdminPage?"#aaa":"#666",fontWeight:900,textTransform:"uppercase",letterSpacing:0.3,minWidth:64,flexShrink:0}}>
+            <span style={{fontSize:15}}>{p.icon}</span>
+            <span style={{fontSize:8,whiteSpace:"nowrap"}}>{p.label}</span>
+          </button>);
+        })}
+        {isAdmin&&<button onClick={()=>{setMode("guest");setPage("home");}} style={{display:"inline-flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,padding:"10px 16px",fontSize:9,cursor:"pointer",border:"none",borderTop:"3px solid #F97B6B",background:"#1a0000",color:"#F97B6B",fontWeight:900,textTransform:"uppercase",letterSpacing:0.3,minWidth:64,flexShrink:0}}><span style={{fontSize:15}}>✕</span><span style={{fontSize:8}}>Sair</span></button>}
+      </div>
+    </nav>
+
+    {/* ── MOBILE ADMIN BUTTON ── */}
+    {!isAdmin&&(
+      <button className="mobile-admin-btn" onClick={()=>setShowLogin(true)} style={{display:"none",position:"fixed",bottom:70,right:16,width:44,height:44,background:"#7C6FF7",border:B,borderRadius:"50%",boxShadow:SH,cursor:"pointer",fontSize:16,fontWeight:900,zIndex:101,alignItems:"center",justifyContent:"center"}}>
+        ▶
+      </button>
+    )}
+    {isAdmin&&(
+      <button className="mobile-admin-btn" onClick={()=>setPage("nova")} style={{display:"none",position:"fixed",bottom:70,right:16,width:52,height:52,background:"#4FC9A4",border:B,borderRadius:R,boxShadow:SH,cursor:"pointer",fontSize:11,fontWeight:900,zIndex:101,alignItems:"center",justifyContent:"center",flexDirection:"column",gap:2,textTransform:"uppercase",letterSpacing:0.5}}>
+        <span style={{fontSize:18}}>⊕</span>
+        <span style={{fontSize:8}}>Nova</span>
+      </button>
+    )}
   </div>);
 }
 
