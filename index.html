@@ -1275,7 +1275,13 @@ function PageTimer({timer,onUpdate}){
   const totalPlay=BLIND_STRUCTURE.filter(l=>!l.isBreak).length;
   const currPlay=BLIND_STRUCTURE.slice(0,ts.level+1).filter(l=>!l.isBreak).length;
 
-  const getBR=()=>{const n=new Date();return new Date(n.getTime()+n.getTimezoneOffset()*60000-10800000);};
+  const getBR=()=>{
+    const n=new Date();
+    let h=n.getUTCHours()-3;if(h<0)h+=24;
+    const m=n.getUTCMinutes(),s=n.getUTCSeconds();
+    return{h,m,s,hm:h*60+m,totalSecs:h*3600+m*60+s,
+      str:`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`};
+  };
   const fmtCD=s=>{const v=Math.max(0,Math.ceil(s));return`${String(Math.floor(v/60)).padStart(2,"0")}:${String(v%60).padStart(2,"0")}`;};
   const fmtB=l=>l&&!l.isBreak?`${(l.sb||0).toLocaleString("pt-BR")} / ${(l.bb||0).toLocaleString("pt-BR")}` :"";
 
@@ -1308,7 +1314,7 @@ function PageTimer({timer,onUpdate}){
       const t=tsRef.current;
       const l=BLIND_STRUCTURE[t.level]||BLIND_STRUCTURE[0];
       const br=getBR();
-      setNowStr(`${String(br.getHours()).padStart(2,"0")}:${String(br.getMinutes()).padStart(2,"0")}:${String(br.getSeconds()).padStart(2,"0")}`);
+      setNowStr(br.str);
       if(t.status==="running"&&t.levelStartedAt){
         if(l.isLast||!l.dur){setCd(0);return;}
         const rem=Math.max(0,l.dur-(Date.now()-t.levelStartedAt)/1000);
@@ -1318,10 +1324,8 @@ function PageTimer({timer,onUpdate}){
       }else if(t.status==="paused"){
         setCd(t.pausedSecs||0);
       }else if(t.status==="idle"){
-        const hm=br.getHours()*60+br.getMinutes();
-        if(hm>=1170){
-          const s19=new Date(br);s19.setHours(19,30,0,0);
-          const elap=Math.floor((Date.now()-(s19.getTime()+10800000))/1000);
+        if(br.hm>=1170){
+          const elap=br.totalSecs-(19*3600+30*60);
           if(elap>=0){
             let acc=0,done=false;
             for(let i=0;i<BLIND_STRUCTURE.length;i++){
@@ -1433,53 +1437,136 @@ function PageTimer({timer,onUpdate}){
   );
 
   return(
-    <div style={{background:bgCol,margin:"-1.5rem",padding:"1.2rem 1rem 6rem",minHeight:"100vh",transition:"background 0.4s",boxSizing:"border-box"}}>
-      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:16}}>
+    <div style={{
+      background:bgCol,
+      position:"fixed",top:0,left:0,right:0,bottom:0,
+      display:"flex",flexDirection:"column",
+      transition:"background 0.5s",
+      fontFamily:"'Arial Black',Arial,sans-serif",
+      zIndex:50,
+      overflow:"hidden"
+    }}>
+
+      {/* ── TOPO: fase + nível + relógio ── */}
+      <div style={{
+        display:"flex",alignItems:"center",justifyContent:"space-between",
+        padding:"18px 24px 0"
+      }}>
         <div>
-          <div style={{color:accent,fontSize:10,fontWeight:900,textTransform:"uppercase",letterSpacing:2}}>{faseStr}</div>
-          <div style={{color:"#666",fontSize:11,fontWeight:700}}>Nível {currPlay} de {totalPlay}</div>
+          <div style={{color:accent,fontSize:11,fontWeight:900,textTransform:"uppercase",letterSpacing:3,marginBottom:2}}>{faseStr}</div>
+          <div style={{color:"#bbb",fontSize:14,fontWeight:700}}>Nível {currPlay} de {totalPlay}</div>
         </div>
         <div style={{textAlign:"right"}}>
-          <div style={{color:"#333",fontSize:9,fontWeight:700,textTransform:"uppercase"}}>Brasília</div>
-          <div style={{color:"#444",fontSize:12,fontWeight:900,fontFamily:"monospace"}}>{nowStr}</div>
+          <div style={{color:"#333",fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>Brasília</div>
+          <div style={{color:"#555",fontSize:14,fontWeight:900,fontFamily:"monospace",letterSpacing:1}}>{nowStr}</div>
         </div>
       </div>
 
-      <div style={{textAlign:"center",marginBottom:6}}>
-        <div style={{color:"#444",fontSize:10,fontWeight:900,textTransform:"uppercase",letterSpacing:3,marginBottom:6}}>SB / BB</div>
-        <div style={{color:"#fff",fontSize:"clamp(36px,10vw,64px)",fontWeight:900,lineHeight:1,fontFamily:"'Arial Black',sans-serif",letterSpacing:-1}}>{fmtB(lvl)}</div>
-      </div>
+      {/* ── CENTRO: blinds + countdown ── */}
+      <div style={{
+        flex:1,display:"flex",flexDirection:"column",
+        alignItems:"center",justifyContent:"center",
+        padding:"0 20px"
+      }}>
+        {/* Blinds */}
+        <div style={{textAlign:"center",marginBottom:16}}>
+          <div style={{color:"#444",fontSize:11,fontWeight:900,textTransform:"uppercase",letterSpacing:5,marginBottom:10}}>SB / BB</div>
+          <div style={{
+            color:"#fff",
+            fontSize:"clamp(42px,12vw,80px)",
+            fontWeight:900,
+            lineHeight:1,
+            letterSpacing:-1
+          }}>{fmtB(lvl)}</div>
+        </div>
 
-      <div style={{textAlign:"center",marginBottom:8}}>
-        <div style={{color:accent,fontSize:"clamp(64px,18vw,100px)",fontWeight:900,lineHeight:1,fontFamily:"'Arial Black',sans-serif",letterSpacing:4,transition:"color 0.3s"}}>
+        {/* Countdown */}
+        <div style={{
+          color:accent,
+          fontSize:"clamp(96px,28vw,160px)",
+          fontWeight:900,
+          lineHeight:0.9,
+          letterSpacing:4,
+          transition:"color 0.3s",
+          textAlign:"center"
+        }}>
           {lvl.isLast?"∞":fmtCD(cd)}
         </div>
-        {ts.status==="paused"&&<div style={{color:"#FBBF24",fontSize:11,fontWeight:900,textTransform:"uppercase",letterSpacing:3,marginTop:4}}>⏸ PAUSADO</div>}
+
+        {ts.status==="paused"&&(
+          <div style={{
+            marginTop:12,
+            color:"#FBBF24",fontSize:13,fontWeight:900,
+            textTransform:"uppercase",letterSpacing:4,
+            border:"2px solid #FBBF24",borderRadius:4,
+            padding:"4px 16px"
+          }}>⏸ PAUSADO</div>
+        )}
       </div>
 
-      {!lvl.isLast&&<div style={{height:6,background:"#1a1a1a",borderRadius:3,marginBottom:10,overflow:"hidden"}}><div style={{height:"100%",width:`${prog}%`,background:accent,borderRadius:3,transition:"width 1s linear"}}/></div>}
+      {/* ── BARRA DE PROGRESSO ── */}
+      {!lvl.isLast&&(
+        <div style={{padding:"0 24px 6px"}}>
+          <div style={{height:10,background:"#1c1c1c",borderRadius:5,overflow:"hidden",border:"1px solid #2a2a2a"}}>
+            <div style={{height:"100%",width:`${prog}%`,background:accent,borderRadius:5,transition:"width 1s linear"}}/>
+          </div>
+        </div>
+      )}
 
-      <div style={{textAlign:"center",marginBottom:20,minHeight:18}}>
-        {nextLvl&&!nextLvl.isBreak&&<span style={{color:"#333",fontSize:11,fontWeight:700}}>Próximo: <span style={{color:"#555"}}>{fmtB(nextLvl)}</span></span>}
-        {nextLvl?.isBreak&&<span style={{color:"#FBBF24",fontSize:11,fontWeight:900}}>🍕 Próximo: INTERVALO</span>}
-        {!nextLvl&&<span style={{color:"#4FC9A4",fontSize:11,fontWeight:900}}>🏆 Último nível</span>}
+      {/* ── PRÓXIMO NÍVEL ── */}
+      <div style={{textAlign:"center",padding:"6px 24px 12px",minHeight:28}}>
+        {nextLvl&&!nextLvl.isBreak&&(
+          <span style={{color:"#888",fontSize:15,fontWeight:700}}>
+            Próximo: <span style={{color:"#bbb",fontWeight:900}}>{fmtB(nextLvl)}</span>
+          </span>
+        )}
+        {nextLvl?.isBreak&&<span style={{color:"#FBBF24",fontSize:15,fontWeight:900}}>🍕 Próximo: INTERVALO</span>}
+        {!nextLvl&&<span style={{color:"#4FC9A4",fontSize:15,fontWeight:900}}>🏆 Último nível</span>}
       </div>
 
-      <div style={{display:"flex",gap:8,justifyContent:"center",marginBottom:10}}>
-        <button style={btnCtrl("#1a1a1a","#666")} onClick={doPrev}>↩</button>
-        <button style={btnCtrl(ts.status==="paused"?"#4FC9A4":"#FBBF24","#000")} onClick={doPause}>
+      {/* ── CONTROLES PRINCIPAIS ── */}
+      <div style={{display:"flex",gap:12,justifyContent:"center",padding:"0 24px 10px"}}>
+        <button onClick={doPrev} style={{
+          background:"#1a1a1a",border:"3px solid #2a2a2a",borderRadius:10,
+          color:"#555",fontSize:26,padding:"16px 0",cursor:"pointer",
+          fontWeight:900,width:80,boxShadow:"2px 2px 0 #000",
+          display:"flex",alignItems:"center",justifyContent:"center"
+        }}>↩</button>
+
+        <button onClick={doPause} style={{
+          background:ts.status==="paused"?"#4FC9A4":"#FBBF24",
+          border:"3px solid #000",borderRadius:10,
+          color:"#000",fontSize:32,padding:"16px 0",cursor:"pointer",
+          fontWeight:900,flex:1,maxWidth:180,boxShadow:"3px 3px 0 #000",
+          display:"flex",alignItems:"center",justifyContent:"center"
+        }}>
           {ts.status==="paused"?"▶":"⏸"}
         </button>
-        <button style={btnCtrl("#1a1a1a","#666")} onClick={doNext}>⏭</button>
+
+        <button onClick={doNext} style={{
+          background:"#1a1a1a",border:"3px solid #2a2a2a",borderRadius:10,
+          color:"#555",fontSize:26,padding:"16px 0",cursor:"pointer",
+          fontWeight:900,width:80,boxShadow:"2px 2px 0 #000",
+          display:"flex",alignItems:"center",justifyContent:"center"
+        }}>⏭</button>
       </div>
 
-      <div style={{display:"flex",gap:6,justifyContent:"center",flexWrap:"wrap"}}>
-        <button style={btnSec} onClick={doRestartLvl}>↺ Reiniciar nível</button>
-        <button style={btnSec} onClick={doReset}>⏹ Resetar tudo</button>
-        {!soundOn
-          ?<button style={btnSec} onClick={enableSnd}>🔇 Habilitar som</button>
-          :<button style={{...btnSec,color:"#4FC9A4"}} onClick={()=>setSoundOn(false)}>🔊 Som ativo</button>
-        }
+      {/* ── CONTROLES SECUNDÁRIOS ── */}
+      <div style={{
+        display:"flex",gap:8,justifyContent:"center",
+        padding:"0 24px 28px",flexWrap:"wrap"
+      }}>
+        {[
+          {label:"↺ Nível",fn:doRestartLvl,color:"#555"},
+          {label:"⏹ Resetar",fn:doReset,color:"#555"},
+          {label:soundOn?"🔊 Som":"🔇 Som",fn:soundOn?()=>setSoundOn(false):enableSnd,color:soundOn?"#4FC9A4":"#555"},
+        ].map(({label,fn,color})=>(
+          <button key={label} onClick={fn} style={{
+            background:"#111",border:"1px solid #2a2a2a",borderRadius:8,
+            color,fontSize:12,padding:"10px 16px",cursor:"pointer",
+            fontWeight:900,letterSpacing:0.5
+          }}>{label}</button>
+        ))}
       </div>
     </div>
   );
