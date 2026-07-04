@@ -1263,12 +1263,31 @@ function PageTimer({timer,onUpdate}){
   const tsRef=React.useRef(ts);
   const upRef=React.useRef(onUpdate);
   const sndRef=React.useRef(false);
+  const recalRef=React.useRef(null);
   const audioRef=React.useRef(null);
   const warnRef=React.useRef(-1);
   const lvlupRef=React.useRef(-1);
   useEffect(()=>{tsRef.current=ts;},[ts]);
   useEffect(()=>{upRef.current=onUpdate;},[onUpdate]);
   useEffect(()=>{sndRef.current=soundOn;},[soundOn]);
+
+  // Recalibra para o nível correto baseado no horário real de Brasília
+  const recalibrateByTime=()=>{
+    const br=getBR();
+    if(br.hm<1170)return; // antes das 19:30, não faz nada
+    const elap=br.totalSecs-(19*3600+30*60);
+    if(elap<0)return;
+    let acc=0;
+    for(let i=0;i<BLIND_STRUCTURE.length;i++){
+      const bl=BLIND_STRUCTURE[i];
+      if(bl.isBreak){upRef.current(p=>({...p,timer:{status:"break",level:i,levelStartedAt:null}}));return;}
+      if(!bl.dur){upRef.current(p=>({...p,timer:{status:"running",level:i,levelStartedAt:Date.now()}}));return;}
+      if(elap<acc+bl.dur){upRef.current(p=>({...p,timer:{status:"running",level:i,levelStartedAt:Date.now()-(elap-acc)*1000}}));return;}
+      acc+=bl.dur;
+    }
+    upRef.current(p=>({...p,timer:{status:"finished",level:BLIND_STRUCTURE.length-1,levelStartedAt:null}}));
+  };
+  useEffect(()=>{recalRef.current=recalibrateByTime;});
 
   const lvl=BLIND_STRUCTURE[ts.level]||BLIND_STRUCTURE[0];
   const nextLvl=BLIND_STRUCTURE[ts.level+1];
@@ -1320,24 +1339,16 @@ function PageTimer({timer,onUpdate}){
         const rem=Math.max(0,l.dur-(Date.now()-t.levelStartedAt)/1000);
         setCd(rem);
         if(rem<=60&&rem>0&&warnRef.current!==t.level){warnRef.current=t.level;beep(880,0.25,0.5);}
-        if(rem<=0&&lvlupRef.current!==t.level){lvlupRef.current=t.level;advance(t);}
+        if(rem<=0&&lvlupRef.current!==t.level){
+          lvlupRef.current=t.level;
+          // Se já passou das 19:30, recalibra pelo horário real em vez de só avançar um nível
+          if(br.hm>=1170)recalRef.current();
+          else advance(t);
+        }
       }else if(t.status==="paused"){
         setCd(t.pausedSecs||0);
       }else if(t.status==="idle"){
-        if(br.hm>=1170){
-          const elap=br.totalSecs-(19*3600+30*60);
-          if(elap>=0){
-            let acc=0,done=false;
-            for(let i=0;i<BLIND_STRUCTURE.length;i++){
-              const bl=BLIND_STRUCTURE[i];
-              if(bl.isBreak){upRef.current(p=>({...p,timer:{status:"break",level:i,levelStartedAt:null}}));done=true;break;}
-              if(!bl.dur){upRef.current(p=>({...p,timer:{status:"running",level:i,levelStartedAt:Date.now()}}));done=true;break;}
-              if(elap<acc+bl.dur){upRef.current(p=>({...p,timer:{status:"running",level:i,levelStartedAt:Date.now()-(elap-acc)*1000}}));done=true;break;}
-              acc+=bl.dur;
-            }
-            if(!done)upRef.current(p=>({...p,timer:{status:"finished",level:BLIND_STRUCTURE.length-1,levelStartedAt:null}}));
-          }
-        }
+        recalRef.current();
       }
     };
     const id=setInterval(tick,1000);tick();
@@ -1356,7 +1367,11 @@ function PageTimer({timer,onUpdate}){
     setSoundOn(true);
     try{const c=new(window.AudioContext||window.webkitAudioContext)();audioRef.current=c;const o=c.createOscillator();o.connect(c.destination);o.start();o.stop(c.currentTime+0.001);}catch(e){}
   };
-  const doStart=()=>onUpdate(p=>({...p,timer:{status:"running",level:0,levelStartedAt:Date.now()}}));
+  const doStart=()=>{
+    const br=getBR();
+    if(br.hm>=1170)recalibrateByTime(); // depois das 19:30, vai pro nível correto
+    else onUpdate(p=>({...p,timer:{status:"running",level:0,levelStartedAt:Date.now()}}));
+  };
   const doRetomar=()=>{const ni=ts.level+1;if(ni<BLIND_STRUCTURE.length){chime();onUpdate(p=>({...p,timer:{status:"running",level:ni,levelStartedAt:Date.now()}}));}};
   const doPause=()=>{
     if(ts.status==="running")onUpdate(p=>({...p,timer:{...ts,status:"paused",pausedSecs:Math.ceil(cd)}}));
