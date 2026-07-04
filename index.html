@@ -26,8 +26,8 @@
     .step-max{max-width:100%!important;}
   }
   /* Safe area para iPhone: afasta a nav do home indicator */
-  .mobile-nav{padding-bottom:env(safe-area-inset-bottom,0px);}
-  .mobile-admin-btn{bottom:calc(80px + env(safe-area-inset-bottom,0px))!important;}
+  .mobile-nav-spacer{height:24px;background:#000;flex-shrink:0;}
+  .mobile-admin-btn{bottom:110px!important;}
 </style>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
@@ -1568,7 +1568,7 @@ function PageTimer({timer,onUpdate}){
       {/* ── CONTROLES SECUNDÁRIOS ── */}
       <div style={{
         display:"flex",gap:8,justifyContent:"center",
-        padding:"0 24px 28px",flexWrap:"wrap"
+        padding:"0 24px 110px",flexWrap:"wrap"
       }}>
         {[
           {label:"↺ Nível",fn:doRestartLvl,color:"#555"},
@@ -1751,7 +1751,7 @@ function App(){
         }
       </div>
     </aside>
-    <main className="main-content" style={{flex:1,padding:"1.5rem",overflowY:"auto",minWidth:0,paddingBottom:"7rem"}}>
+    <main className="main-content" style={{flex:1,padding:"1.5rem",overflowY:"auto",minWidth:0,paddingBottom:"8rem"}}>
       {page==="home"&&<PageHome sessions={sessions} poteFinal={poteFinal} standings={standings} balance={balance} temporada={temporada} setPage={setPage}/>}
       {page==="classificacao"&&<PageClassificacao standings={standings} sessions={sessions}/>}
       {page==="saldo"&&<PageSaldo sessions={sessions} players={players}/>}
@@ -1769,7 +1769,8 @@ function App(){
 
     {/* ── MOBILE BOTTOM NAV ── */}
     <nav className="mobile-nav" style={{display:"none",position:"fixed",bottom:0,left:0,right:0,background:"#000",borderTop:B,zIndex:100,overflowX:"scroll",WebkitOverflowScrolling:"touch"}}>
-      <div style={{display:"flex",flexDirection:"row",width:"max-content",minWidth:"100%"}}>
+      <div style={{display:"flex",flexDirection:"column",minWidth:"100%"}}>
+        <div style={{display:"flex",flexDirection:"row",width:"max-content",minWidth:"100%"}}>
         {PAGES.map((p,i)=>{
           const accent=NAV_ACCENT[i%NAV_ACCENT.length];
           const active=page===p.id;
@@ -1780,6 +1781,9 @@ function App(){
           </button>);
         })}
         {isAdmin&&<button onClick={()=>{setMode("guest");setPage("home");}} style={{display:"inline-flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4,padding:"14px 18px",fontSize:10,cursor:"pointer",border:"none",borderTop:"3px solid #F97B6B",background:"#1a0000",color:"#F97B6B",fontWeight:900,textTransform:"uppercase",letterSpacing:0.3,minWidth:68,flexShrink:0}}><span style={{fontSize:20}}>✕</span><span style={{fontSize:10}}>Sair</span></button>}
+        </div>
+        {/* Espaçador home indicator iPhone */}
+        <div className="mobile-nav-spacer"/>
       </div>
     </nav>
 
