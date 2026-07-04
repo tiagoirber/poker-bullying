@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"/>
 <title>Poker do Bullying</title>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -25,6 +25,9 @@
     .nova-row-edit{grid-template-columns:auto 1fr 60px 65px!important;}
     .step-max{max-width:100%!important;}
   }
+  /* Safe area para iPhone: afasta a nav do home indicator */
+  .mobile-nav{padding-bottom:env(safe-area-inset-bottom,0px);}
+  .mobile-admin-btn{bottom:calc(80px + env(safe-area-inset-bottom,0px))!important;}
 </style>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
@@ -1263,7 +1266,6 @@ function PageTimer({timer,onUpdate}){
   const tsRef=React.useRef(ts);
   const upRef=React.useRef(onUpdate);
   const sndRef=React.useRef(false);
-  const recalRef=React.useRef(null);
   const audioRef=React.useRef(null);
   const warnRef=React.useRef(-1);
   const lvlupRef=React.useRef(-1);
@@ -1271,23 +1273,31 @@ function PageTimer({timer,onUpdate}){
   useEffect(()=>{upRef.current=onUpdate;},[onUpdate]);
   useEffect(()=>{sndRef.current=soundOn;},[soundOn]);
 
-  // Recalibra para o nível correto baseado no horário real de Brasília
-  const recalibrateByTime=()=>{
+  // ── RECALIBRAÇÃO REATIVA ─────────────────────────────────
+  // Roda toda vez que status ou level muda.
+  // Corrige o timer para o nível correto pelo horário real de Brasília.
+  // Só atua na fase pré-intervalo (níveis 0-8).
+  // Após o intervalo (level>=9), o timer roda livre (retomada manual).
+  useEffect(()=>{
+    if(ts.status==="paused"||ts.status==="finished")return;
+    if(ts.level>=9)return; // após intervalo, não interferir
     const br=getBR();
-    if(br.hm<1170)return; // antes das 19:30, não faz nada
+    if(br.hm<1170)return; // antes das 19:30
     const elap=br.totalSecs-(19*3600+30*60);
     if(elap<0)return;
-    let acc=0;
-    for(let i=0;i<BLIND_STRUCTURE.length;i++){
+    let acc=0,target=null;
+    for(let i=0;i<=8;i++){
       const bl=BLIND_STRUCTURE[i];
-      if(bl.isBreak){upRef.current(p=>({...p,timer:{status:"break",level:i,levelStartedAt:null}}));return;}
-      if(!bl.dur){upRef.current(p=>({...p,timer:{status:"running",level:i,levelStartedAt:Date.now()}}));return;}
-      if(elap<acc+bl.dur){upRef.current(p=>({...p,timer:{status:"running",level:i,levelStartedAt:Date.now()-(elap-acc)*1000}}));return;}
+      if(bl.isBreak){target={status:"break",level:i,levelStartedAt:null};break;}
+      if(elap<acc+bl.dur){target={status:"running",level:i,levelStartedAt:Date.now()-(elap-acc)*1000};break;}
       acc+=bl.dur;
     }
-    upRef.current(p=>({...p,timer:{status:"finished",level:BLIND_STRUCTURE.length-1,levelStartedAt:null}}));
-  };
-  useEffect(()=>{recalRef.current=recalibrateByTime;});
+    if(!target)target={status:"break",level:8,levelStartedAt:null};
+    // Só escreve se o estado atual está errado
+    if(ts.status!==target.status||ts.level!==target.level){
+      onUpdate(p=>({...p,timer:target}));
+    }
+  },[ts.status,ts.level]);
 
   const lvl=BLIND_STRUCTURE[ts.level]||BLIND_STRUCTURE[0];
   const nextLvl=BLIND_STRUCTURE[ts.level+1];
@@ -1339,16 +1349,9 @@ function PageTimer({timer,onUpdate}){
         const rem=Math.max(0,l.dur-(Date.now()-t.levelStartedAt)/1000);
         setCd(rem);
         if(rem<=60&&rem>0&&warnRef.current!==t.level){warnRef.current=t.level;beep(880,0.25,0.5);}
-        if(rem<=0&&lvlupRef.current!==t.level){
-          lvlupRef.current=t.level;
-          // Se já passou das 19:30, recalibra pelo horário real em vez de só avançar um nível
-          if(br.hm>=1170)recalRef.current();
-          else advance(t);
-        }
+        if(rem<=0&&lvlupRef.current!==t.level){lvlupRef.current=t.level;advance(t);}
       }else if(t.status==="paused"){
         setCd(t.pausedSecs||0);
-      }else if(t.status==="idle"){
-        recalRef.current();
       }
     };
     const id=setInterval(tick,1000);tick();
@@ -1367,11 +1370,7 @@ function PageTimer({timer,onUpdate}){
     setSoundOn(true);
     try{const c=new(window.AudioContext||window.webkitAudioContext)();audioRef.current=c;const o=c.createOscillator();o.connect(c.destination);o.start();o.stop(c.currentTime+0.001);}catch(e){}
   };
-  const doStart=()=>{
-    const br=getBR();
-    if(br.hm>=1170)recalibrateByTime(); // depois das 19:30, vai pro nível correto
-    else onUpdate(p=>({...p,timer:{status:"running",level:0,levelStartedAt:Date.now()}}));
-  };
+  const doStart=()=>onUpdate(p=>({...p,timer:{status:"running",level:0,levelStartedAt:Date.now()}}));
   const doRetomar=()=>{const ni=ts.level+1;if(ni<BLIND_STRUCTURE.length){chime();onUpdate(p=>({...p,timer:{status:"running",level:ni,levelStartedAt:Date.now()}}));}};
   const doPause=()=>{
     if(ts.status==="running")onUpdate(p=>({...p,timer:{...ts,status:"paused",pausedSecs:Math.ceil(cd)}}));
@@ -1752,7 +1751,7 @@ function App(){
         }
       </div>
     </aside>
-    <main className="main-content" style={{flex:1,padding:"1.5rem",overflowY:"auto",minWidth:0,paddingBottom:"5rem"}}>
+    <main className="main-content" style={{flex:1,padding:"1.5rem",overflowY:"auto",minWidth:0,paddingBottom:"7rem"}}>
       {page==="home"&&<PageHome sessions={sessions} poteFinal={poteFinal} standings={standings} balance={balance} temporada={temporada} setPage={setPage}/>}
       {page==="classificacao"&&<PageClassificacao standings={standings} sessions={sessions}/>}
       {page==="saldo"&&<PageSaldo sessions={sessions} players={players}/>}
@@ -1775,12 +1774,12 @@ function App(){
           const accent=NAV_ACCENT[i%NAV_ACCENT.length];
           const active=page===p.id;
           const isAdminPage=p.id==="nova"||p.id==="temporada";
-          return(<button key={p.id} onClick={()=>setPage(p.id)} style={{display:"inline-flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,padding:"10px 16px",fontSize:9,cursor:"pointer",border:"none",borderTop:`3px solid ${active?accent:isAdminPage?"#333":"transparent"}`,background:active?accent+"33":isAdminPage?"#111":"transparent",color:active?"#fff":isAdminPage?"#aaa":"#666",fontWeight:900,textTransform:"uppercase",letterSpacing:0.3,minWidth:64,flexShrink:0}}>
-            <span style={{fontSize:15}}>{p.icon}</span>
-            <span style={{fontSize:8,whiteSpace:"nowrap"}}>{p.label}</span>
+          return(<button key={p.id} onClick={()=>setPage(p.id)} style={{display:"inline-flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4,padding:"14px 18px",fontSize:10,cursor:"pointer",border:"none",borderTop:`3px solid ${active?accent:isAdminPage?"#333":"transparent"}`,background:active?accent+"33":isAdminPage?"#111":"transparent",color:active?"#fff":isAdminPage?"#aaa":"#666",fontWeight:900,textTransform:"uppercase",letterSpacing:0.3,minWidth:68,flexShrink:0}}>
+            <span style={{fontSize:20}}>{p.icon}</span>
+            <span style={{fontSize:10,whiteSpace:"nowrap"}}>{p.label}</span>
           </button>);
         })}
-        {isAdmin&&<button onClick={()=>{setMode("guest");setPage("home");}} style={{display:"inline-flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,padding:"10px 16px",fontSize:9,cursor:"pointer",border:"none",borderTop:"3px solid #F97B6B",background:"#1a0000",color:"#F97B6B",fontWeight:900,textTransform:"uppercase",letterSpacing:0.3,minWidth:64,flexShrink:0}}><span style={{fontSize:15}}>✕</span><span style={{fontSize:8}}>Sair</span></button>}
+        {isAdmin&&<button onClick={()=>{setMode("guest");setPage("home");}} style={{display:"inline-flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4,padding:"14px 18px",fontSize:10,cursor:"pointer",border:"none",borderTop:"3px solid #F97B6B",background:"#1a0000",color:"#F97B6B",fontWeight:900,textTransform:"uppercase",letterSpacing:0.3,minWidth:68,flexShrink:0}}><span style={{fontSize:20}}>✕</span><span style={{fontSize:10}}>Sair</span></button>}
       </div>
     </nav>
 
