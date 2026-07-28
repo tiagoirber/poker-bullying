@@ -202,7 +202,7 @@ function recalcSession(sess){
     :top3.map((n,i)=>({n,v:pD*POTE_PERCENT[i]}));
   const tBase=basePercent.reduce((s,x)=>s+x.v,0);
   const g={};present.forEach(p=>g[p]=0);ausentes.forEach(p=>{g[p]=0;});
-  if(isNew){Object.entries(bountys||{}).forEach(([,el])=>{g[el]=(g[el]||0)+BOUNTY_VALUE;});}
+  if(isNew){Object.entries(bountys||{}).forEach(([,el])=>{if(!el)return;const parts=el.split('|').filter(Boolean);const val=BOUNTY_VALUE/parts.length;parts.forEach(p=>{g[p]=(g[p]||0)+val;});});}
   else{Object.entries(bountys||{}).forEach(([el,qtd])=>{g[el]=(g[el]||0)+(parseInt(qtd)||0)*BOUNTY_VALUE;});}
   basePercent.forEach(({n,v})=>{if(!n)return;const desc=tBase>0?totalExtras*(v/tBase):0;g[n]=(g[n]||0)+v-desc;});
   Object.entries(extrasObj).forEach(([n,v])=>{if(parseFloat(v||0)>0)g[n]=(g[n]||0)+parseFloat(v);});
@@ -221,9 +221,27 @@ function recalcSession(sess){
 function getBountyPorEl(bountys){
   const r={};if(!bountys)return r;
   const isNew=Object.keys(bountys).length>0&&Object.values(bountys).every(v=>typeof v==="string");
-  if(isNew){Object.entries(bountys).forEach(([eliminado,eliminador])=>{if(!r[eliminador])r[eliminador]=[];r[eliminador].push(eliminado);});}
-  else{Object.entries(bountys).forEach(([eliminador,qtd])=>{r[eliminador]=Array(parseInt(qtd)||0).fill("?");});}
+  if(isNew){
+    Object.entries(bountys).forEach(([eliminado,eliminador])=>{
+      if(!eliminador)return;
+      // suporte a bounty dividido: "Tiago|Léo"
+      eliminador.split('|').filter(Boolean).forEach(el=>{
+        if(!r[el])r[el]=[];
+        r[el].push(eliminado);
+      });
+    });
+  }else{Object.entries(bountys).forEach(([eliminador,qtd])=>{r[eliminador]=Array(parseInt(qtd)||0).fill("?");});}
   return r;
+}
+// Valor correto de bounty para um eliminador (considera divisão)
+function getBountyValor(bountys,eliminador){
+  let total=0;
+  Object.entries(bountys||{}).forEach(([,el])=>{
+    if(!el)return;
+    const parts=el.split('|').filter(Boolean);
+    if(parts.includes(eliminador))total+=BOUNTY_VALUE/parts.length;
+  });
+  return total;
 }
 
 const B="3px solid #000",SH="4px 4px 0 #000",SH_SM="3px 3px 0 #000",R=4,BG="#f5f0e8";
@@ -363,19 +381,32 @@ function EditSession({sess,onSave,onCancel}){
       <div style={{marginBottom:14}}>
         <div style={nb.label}>Bountys</div>
         {posList.filter(([,pos])=>parseInt(pos)>3).map(([eliminado,pos])=>(
-          <div key={eliminado} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-            <div style={{...nb.tag("#e5e5e5"),minWidth:28,textAlign:"center"}}>{pos}º</div>
-            <Av name={eliminado} size={22}/>
-            <span style={{flex:1,fontSize:12,fontWeight:700}}>{eliminado} foi elim. por:</span>
-            <select style={{...nb.sel,minWidth:130}} value={bountys[eliminado]||""} onChange={e=>{const val=e.target.value;setBountys(prev=>{const next={...prev};if(val)next[eliminado]=val;else delete next[eliminado];return next;})}}>
-              <option value="">— ninguém —</option>
-              {present.filter(p=>p!==eliminado).map(p=><option key={p} value={p}>{p}</option>)}
-            </select>
+          <div key={eliminado} style={{marginBottom:10}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+              <div style={{...nb.tag("#e5e5e5"),minWidth:28,textAlign:"center"}}>{pos}º</div>
+              <Av name={eliminado} size={22}/>
+              <span style={{flex:1,fontSize:12,fontWeight:700}}>{eliminado} foi elim. por:</span>
+              <select style={{...nb.sel,minWidth:110}} value={(bountys[eliminado]||"").split('|')[0]||""} onChange={e=>{const val=e.target.value;const seg=(bountys[eliminado]||"").split('|')[1]||"";setBountys(prev=>{const next={...prev};if(val&&seg)next[eliminado]=val+'|'+seg;else if(val)next[eliminado]=val;else delete next[eliminado];return next;})}}>
+                <option value="">— ninguém —</option>
+                {present.filter(p=>p!==eliminado).map(p=><option key={p} value={p}>{p}</option>)}
+              </select>
+              <button style={{...nb.btn((bountys[eliminado]||"").includes('|')?"#7C6FF7":"#e5e5e5"),padding:"4px 8px",fontSize:12,minWidth:28}} onClick={()=>{setBountys(prev=>{const next={...prev};const cur=next[eliminado]||"";if(cur.includes('|')){const first=cur.split('|')[0];if(first)next[eliminado]=first;else delete next[eliminado];}else if(cur){next[eliminado]=cur+'|';}return next;});}} title="Dividir R$5 cada">÷</button>
+            </div>
+            {(bountys[eliminado]||"").includes('|')&&(
+              <div style={{display:"flex",alignItems:"center",gap:8,paddingLeft:36}}>
+                <span style={{fontSize:10,fontWeight:900,color:"#7C6FF7",minWidth:28,flexShrink:0}}>e por:</span>
+                <select style={{...nb.sel,flex:1,fontSize:11}} value={(bountys[eliminado]||"").split('|')[1]||""} onChange={e=>{const val=e.target.value;const prim=(bountys[eliminado]||"").split('|')[0]||"";setBountys(prev=>{const next={...prev};if(prim&&val)next[eliminado]=prim+'|'+val;else if(prim)next[eliminado]=prim;return next;})}}>
+                  <option value="">— ninguém —</option>
+                  {present.filter(p=>p!==eliminado&&p!==((bountys[eliminado]||"").split('|')[0]||"")).map(p=><option key={p} value={p}>{p}</option>)}
+                </select>
+                <span style={{fontSize:10,fontWeight:900,color:"#7C6FF7"}}>R${BOUNTY_VALUE/2} cada</span>
+              </div>
+            )}
           </div>
         ))}
         {Object.keys(bountyPorEl).length>0&&(
           <div style={{...nb.cardSm("#FBBF24"),marginTop:8}}>
-            {Object.entries(bountyPorEl).map(([el,elims])=>(<div key={el} style={{fontSize:11,fontWeight:700,marginBottom:2}}>{el} eliminou {elims.join(", ")} → {fmt(elims.length*BOUNTY_VALUE)}</div>))}
+            {Object.entries(bountyPorEl).map(([el,elims])=>(<div key={el} style={{fontSize:11,fontWeight:700,marginBottom:2}}>{el} eliminou {elims.join(", ")} → {fmt(getBountyValor(bountys,el))}</div>))}
             <div style={{fontWeight:900,marginTop:4}}>Total: {fmt(tB)}</div>
           </div>
         )}
@@ -615,12 +646,12 @@ function PageAcerto({sessions}){
     }
     if(Object.keys(bountyPorEl).length>0){
       L.push(`🎯 *BOUNTYS*`);
-      Object.entries(bountyPorEl).forEach(([el,elims])=>{const val=elims.length*BOUNTY_VALUE;const nomes=elims.filter(e=>e!=="?").join(", ");if(nomes)L.push(`• _${el}_ eliminou _${nomes}_ → *${fmt(val)}*`);else L.push(`• _${el}_: ${elims.length} eliminação(ões) → *${fmt(val)}*`);});
+      Object.entries(bountyPorEl).forEach(([el,elims])=>{const val=getBountyValor(sess?.bountys||{},el);const nomes=elims.filter(e=>e!=="?").join(", ");if(nomes)L.push(`• _${el}_ eliminou _${nomes}_ → *${fmt(val)}*`);else L.push(`• _${el}_: ${elims.length} eliminação(ões) → *${fmt(val)}*`);});
       L.push(``);
     }
     L.push(`📊 *RESULTADO POR JOGADOR*`);
     posList.forEach(([n,pos])=>{
-      const bv=(bountyPorEl[n]||[]).length*BOUNTY_VALUE;
+      const bv=getBountyValor(sess?.bountys||{},n);
       const ganhouTotal=sess.ganhos?.[n]||0;
       const poteVal=ganhouTotal-bv;
       const sl=sess.saldos?.[n]||0;
@@ -628,7 +659,7 @@ function PageAcerto({sessions}){
       L.push(`${pos}º _${n}_`);
       L.push(`   Gasto: *${fmt(sess.gastos?.[n]||0)}*`);
       if(poteVal>0)L.push(`   Pote: ${fmt(poteVal)}`);
-      if(bv>0)L.push(`   Bounty (${(bountyPorEl[n]||[]).length} elim.): ${fmt(bv)}`);
+      if(bv>0)L.push(`   Bounty: ${fmt(bv)}`);
       if(ganhouTotal>0)L.push(`   Total recebido: *${fmt(ganhouTotal)}*`);
       L.push(`   Saldo: ${e} *${fmt(sl)}*`);
       L.push(``);
@@ -883,7 +914,7 @@ function PageNova({players,onSave}){
     const base=getBaseTop3();
     const tBase=base.reduce((s,x)=>s+x.v,0);
     const g={};present.forEach(p=>g[p]=0);ausentes.forEach(p=>{g[p]=0;});
-    Object.entries(bountys).forEach(([,eliminador])=>{if(eliminador)g[eliminador]=(g[eliminador]||0)+BOUNTY_VALUE;});
+    Object.entries(bountys).forEach(([,el])=>{if(el){const parts=el.split('|').filter(Boolean);const val=BOUNTY_VALUE/parts.length;parts.forEach(p=>{g[p]=(g[p]||0)+val;});}});
     base.forEach(({n,v})=>{if(!n)return;const desc=tBase>0?totalExtras*(v/tBase):0;g[n]=(g[n]||0)+v-desc;});
     extrasSeq.filter(e=>e.confirmado&&e.valor>0).forEach(e=>{g[e.nome]=(g[e.nome]||0)+e.valor;});
     const sl={};present.forEach(p=>{sl[p]=(g[p]||0)-(parseFloat(gastos[p])||0);});
@@ -955,13 +986,32 @@ function PageNova({players,onSave}){
                   <span style={{fontSize:10,fontWeight:900,color:"#555",minWidth:40,flexShrink:0}}>Elim. por:</span>
                   <select
                     style={{...nb.sel,flex:1,fontSize:11,minWidth:0}}
-                    value={bountys[p]||""}
-                    onChange={e=>{const v=e.target.value;setBountys(prev=>{const nx={...prev};if(v)nx[p]=v;else delete nx[p];return nx;})}}
+                    value={(bountys[p]||"").split('|')[0]||""}
+                    onChange={e=>{const v=e.target.value;const seg=(bountys[p]||"").split('|')[1]||"";setBountys(prev=>{const nx={...prev};if(v&&seg)nx[p]=v+'|'+seg;else if(v)nx[p]=v;else delete nx[p];return nx;});}}
                   >
                     <option value="">— ninguem —</option>
                     {clickOrder.filter(x=>x!==p).map(x=><option key={x} value={x}>{x}</option>)}
                   </select>
+                  <button
+                    style={{...nb.btn((bountys[p]||"").includes('|')?"#7C6FF7":"#e5e5e5"),padding:"4px 8px",fontSize:12,minWidth:28}}
+                    onClick={()=>{setBountys(prev=>{const nx={...prev};const cur=nx[p]||"";if(cur.includes('|')){const first=cur.split('|')[0];if(first)nx[p]=first;else delete nx[p];}else if(cur){nx[p]=cur+'|';}return nx;});}}
+                    title="Dividir bounty R$5 cada"
+                  >÷</button>
                 </div>
+                {(bountys[p]||"").includes('|')&&(
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
+                    <span style={{fontSize:10,fontWeight:900,color:"#7C6FF7",minWidth:40,flexShrink:0}}>e por:</span>
+                    <select
+                      style={{...nb.sel,flex:1,fontSize:11,minWidth:0}}
+                      value={(bountys[p]||"").split('|')[1]||""}
+                      onChange={e=>{const v=e.target.value;const prim=(bountys[p]||"").split('|')[0]||"";setBountys(prev=>{const nx={...prev};if(prim&&v)nx[p]=prim+'|'+v;else if(prim)nx[p]=prim;return nx;});}}
+                    >
+                      <option value="">— ninguem —</option>
+                      {clickOrder.filter(x=>x!==p&&x!==((bountys[p]||"").split('|')[0]||"")).map(x=><option key={x} value={x}>{x}</option>)}
+                    </select>
+                    <span style={{fontSize:10,fontWeight:900,color:"#7C6FF7",flexShrink:0}}>R${BOUNTY_VALUE/2} cada</span>
+                  </div>
+                )}
               </div>
             ))}
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
