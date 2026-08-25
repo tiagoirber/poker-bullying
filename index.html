@@ -150,8 +150,49 @@ async function fbGet(){
   }catch{return null;}                            // falha de rede: NÃO sobrescrever
 }
 async function fbSet(data){
-  try{const f={};Object.entries(data).forEach(([k,v])=>{f[k]=toFS(v);});await fetch(BASE_URL,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({fields:f})});return true;}
-  catch{return false;}
+  try{
+    const f={};Object.entries(data).forEach(([k,v])=>{f[k]=toFS(v);});
+    await fetch(BASE_URL,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({fields:f})});
+    // ── BACKUP LOCAL ──
+    try{localStorage.setItem("poker-bullying-backup",JSON.stringify(data));localStorage.setItem("poker-bullying-backup-ts",new Date().toISOString());}catch(e){}
+    // ── SNAPSHOT FIRESTORE (últimos 10) ──
+    try{
+      const snapId=new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
+      const snapURL=`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/poker/backup_${snapId}`;
+      fetch(snapURL,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({fields:f})}).catch(()=>{});
+    }catch(e){}
+    return true;
+  }catch{return false;}
+}
+// ── TRAVA DE SEGURANÇA ──
+function fbSetSafe(newData,oldData){
+  if(!oldData||!oldData.sessions)return fbSet(newData);
+  const oldLen=(oldData.sessions||[]).length;
+  const newLen=(newData.sessions||[]).length;
+  // Se vai reduzir mais de 50% das partidas e tinha pelo menos 4, bloqueia
+  if(oldLen>=4&&newLen<oldLen*0.5){
+    const msg=`⚠️ TRAVA DE SEGURANÇA\n\nEssa operação reduziria de ${oldLen} para ${newLen} partidas.\nIsso parece um erro. Operação bloqueada.\n\nSe for intencional (ex: nova temporada), use a página Nova Temporada.`;
+    alert(msg);
+    return Promise.resolve(false);
+  }
+  return fbSet(newData);
+}
+// ── RESTAURAR DO BACKUP LOCAL ──
+function getLocalBackup(){
+  try{
+    const raw=localStorage.getItem("poker-bullying-backup");
+    const ts=localStorage.getItem("poker-bullying-backup-ts");
+    if(!raw)return null;
+    const data=JSON.parse(raw);
+    if(!data.sessions||!Array.isArray(data.sessions))return null;
+    return{data,ts};
+  }catch{return null;}
+}
+function ultimaPartidaStr(sessions){
+  if(!sessions||!sessions.length)return"nenhuma";
+  const dts=sessions.map(s=>s.date||"").filter(Boolean).sort();
+  const d=dts[dts.length-1]||"";
+  return d?fmtDate(d):"?";
 }
 
 function defaultState(){return{sessions:SEED_SESSIONS,players:[...PLAYERS],poteFinal:SEED_POTE,historico:[],temporada:2026,timer:TIMER_INIT};}
@@ -1827,20 +1868,41 @@ function App(){
 
   useEffect(()=>{(async()=>{
     let r=await fbGet();
-    // Retry até 3x em caso de falha de rede antes de qualquer decisão
     for(let i=0;i<3&&r===null;i++){
       await new Promise(res=>setTimeout(res,1200));
       r=await fbGet();
     }
     if(r===null){
-      // Falhou tudo: NUNCA sobrescrever. Mostra erro.
+      const bkp=getLocalBackup();
+      if(bkp){
+        setData(bkp.data);setLoading(false);
+        setSaving(true);
+        const dtLocal=ultimaPartidaStr(bkp.data.sessions);
+        setTimeout(()=>{alert("Sem conexao com o servidor.\n\nCarregado do backup local.\nUltima partida local: "+dtLocal+"\nBackup salvo em: "+(bkp.ts||"?").slice(0,16).replace("T"," ")+"\n\nVerifique sua internet.");setSaving(false);},300);
+        return;
+      }
       setLoadError(true);setLoading(false);return;
     }
     if(r.__empty){
-      // Documento realmente vazio: primeira execução, pode semear
+      const bkp=getLocalBackup();
+      if(bkp&&bkp.data.sessions?.length>5){
+        const dtLocal=ultimaPartidaStr(bkp.data.sessions);
+        if(confirm("O banco de dados esta vazio!\n\nBackup local encontrado:\n- "+bkp.data.sessions.length+" partidas\n- Ultima partida: "+dtLocal+"\n\nDeseja restaurar o backup local?")){
+          setData(bkp.data);await fbSet(bkp.data);setLoading(false);return;
+        }
+      }
       const d=defaultState();setData(d);await fbSet(d);
     }else{
-      setData(r.sessions?r:{...defaultState(),...r});
+      const loaded=r.sessions?r:{...defaultState(),...r};
+      const bkp=getLocalBackup();
+      if(bkp&&bkp.data.sessions?.length>(loaded.sessions?.length||0)+3){
+        const dtServer=ultimaPartidaStr(loaded.sessions);
+        const dtLocal=ultimaPartidaStr(bkp.data.sessions);
+        if(confirm("ATENCAO: possivel perda de dados!\n\nServidor (Firestore):\n- "+((loaded.sessions||[]).length)+" partidas\n- Ultima partida: "+dtServer+"\n\nBackup local (este dispositivo):\n- "+bkp.data.sessions.length+" partidas\n- Ultima partida: "+dtLocal+"\n\nA versao local parece mais recente.\nDeseja atualizar o servidor com o backup local?")){
+          setData(bkp.data);await fbSet(bkp.data);setLoading(false);return;
+        }
+      }
+      setData(loaded);
     }
     setLoading(false);
   })();},[]);
@@ -1853,7 +1915,14 @@ function App(){
 
   const update=async patch=>{
     setSaving(true);
-    setData(prev=>{const next=typeof patch==="function"?patch(prev):{...prev,...patch};fbSet(next).then(()=>setSaving(false));return next;});
+    setData(prev=>{
+      const next=typeof patch==="function"?patch(prev):{...prev,...patch};
+      fbSetSafe(next,prev).then(ok=>{
+        setSaving(false);
+        if(!ok)setData(prev); // rollback se trava bloqueou
+      });
+      return next;
+    });
   };
 
   const handleEditSession=updated=>{
@@ -1932,7 +2001,7 @@ function App(){
       {page==="cuia"&&<PageCuia/>}
       {page==="backup"&&isAdmin&&<PageBackup data={data} onRestore={novo=>{update(()=>novo);}}/>}
       {page==="nova"&&isAdmin&&<PageNova players={players} onSave={sess=>{update(prev=>({...prev,sessions:[...prev.sessions,sess],poteFinal:prev.poteFinal+(sess.poteFinalVal||0)}));setPage("partidas");}}/>}
-      {page==="temporada"&&isAdmin&&<PageTemporada data={data} standings={standings} poteFinal={poteFinal} onConfirm={novoState=>{update(()=>novoState);setPage("home");}}/>}
+      {page==="temporada"&&isAdmin&&<PageTemporada data={data} standings={standings} poteFinal={poteFinal} onConfirm={novoState=>{setSaving(true);setData(novoState);fbSet(novoState).then(()=>setSaving(false));try{localStorage.removeItem("poker-bullying-backup");localStorage.removeItem("poker-bullying-backup-ts");}catch(e){}setPage("home");}}/>}
     </main>
 
     {/* ── MOBILE BOTTOM NAV ── */}
