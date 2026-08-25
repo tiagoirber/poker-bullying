@@ -140,8 +140,14 @@ function fromFS(val){
   return null;
 }
 async function fbGet(){
-  try{const r=await fetch(BASE_URL);if(!r.ok)return null;const d=await r.json();if(!d.fields)return null;const o={};Object.entries(d.fields).forEach(([k,v])=>{o[k]=fromFS(v);});return o;}
-  catch{return null;}
+  try{
+    const r=await fetch(BASE_URL);
+    if(r.status===404)return{__empty:true};      // documento não existe de fato
+    if(!r.ok)return null;                         // erro de rede/servidor: NÃO sobrescrever
+    const d=await r.json();
+    if(!d.fields)return{__empty:true};            // documento existe mas vazio
+    const o={};Object.entries(d.fields).forEach(([k,v])=>{o[k]=fromFS(v);});return o;
+  }catch{return null;}                            // falha de rede: NÃO sobrescrever
 }
 async function fbSet(data){
   try{const f={};Object.entries(data).forEach(([k,v])=>{f[k]=toFS(v);});await fetch(BASE_URL,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({fields:f})});return true;}
@@ -224,7 +230,6 @@ function getBountyPorEl(bountys){
   if(isNew){
     Object.entries(bountys).forEach(([eliminado,eliminador])=>{
       if(!eliminador)return;
-      // suporte a bounty dividido: "Tiago|Léo"
       eliminador.split('|').filter(Boolean).forEach(el=>{
         if(!r[el])r[el]=[];
         r[el].push(eliminado);
@@ -233,7 +238,6 @@ function getBountyPorEl(bountys){
   }else{Object.entries(bountys).forEach(([eliminador,qtd])=>{r[eliminador]=Array(parseInt(qtd)||0).fill("?");});}
   return r;
 }
-// Valor correto de bounty para um eliminador (considera divisão)
 function getBountyValor(bountys,eliminador){
   let total=0;
   Object.entries(bountys||{}).forEach(([,el])=>{
@@ -390,7 +394,7 @@ function EditSession({sess,onSave,onCancel}){
                 <option value="">— ninguém —</option>
                 {present.filter(p=>p!==eliminado).map(p=><option key={p} value={p}>{p}</option>)}
               </select>
-              <button style={{...nb.btn((bountys[eliminado]||"").includes('|')?"#7C6FF7":"#e5e5e5"),padding:"4px 8px",fontSize:12,minWidth:28}} onClick={()=>{setBountys(prev=>{const next={...prev};const cur=next[eliminado]||"";if(cur.includes('|')){const first=cur.split('|')[0];if(first)next[eliminado]=first;else delete next[eliminado];}else if(cur){next[eliminado]=cur+'|';}return next;});}} title="Dividir R$5 cada">÷</button>
+              <button style={{...nb.btn((bountys[eliminado]||"").includes('|')?"#7C6FF7":"#e5e5e5"),padding:"4px 8px",fontSize:12,minWidth:28}} onClick={()=>{setBountys(prev=>{const next={...prev};const cur=next[eliminado]||"";if(cur.includes('|')){const f=cur.split('|')[0];if(f)next[eliminado]=f;else delete next[eliminado];}else if(cur){next[eliminado]=cur+'|';}return next;});}} title="Dividir R$5 cada">÷</button>
             </div>
             {(bountys[eliminado]||"").includes('|')&&(
               <div style={{display:"flex",alignItems:"center",gap:8,paddingLeft:36}}>
@@ -659,7 +663,7 @@ function PageAcerto({sessions}){
       L.push(`${pos}º _${n}_`);
       L.push(`   Gasto: *${fmt(sess.gastos?.[n]||0)}*`);
       if(poteVal>0)L.push(`   Pote: ${fmt(poteVal)}`);
-      if(bv>0)L.push(`   Bounty: ${fmt(bv)}`);
+      if(bv>0)L.push(`   Bounty (${(bountyPorEl[n]||[]).length} elim.): ${fmt(bv)}`);
       if(ganhouTotal>0)L.push(`   Total recebido: *${fmt(ganhouTotal)}*`);
       L.push(`   Saldo: ${e} *${fmt(sl)}*`);
       L.push(``);
@@ -914,7 +918,7 @@ function PageNova({players,onSave}){
     const base=getBaseTop3();
     const tBase=base.reduce((s,x)=>s+x.v,0);
     const g={};present.forEach(p=>g[p]=0);ausentes.forEach(p=>{g[p]=0;});
-    Object.entries(bountys).forEach(([,el])=>{if(el){const parts=el.split('|').filter(Boolean);const val=BOUNTY_VALUE/parts.length;parts.forEach(p=>{g[p]=(g[p]||0)+val;});}});
+    Object.entries(bountys).forEach(([,el])=>{if(el){const parts=el.split('|').filter(Boolean);const val=BOUNTY_VALUE/parts.length;parts.forEach(p=>{g[p]=(g[p]||0)+val;})}});
     base.forEach(({n,v})=>{if(!n)return;const desc=tBase>0?totalExtras*(v/tBase):0;g[n]=(g[n]||0)+v-desc;});
     extrasSeq.filter(e=>e.confirmado&&e.valor>0).forEach(e=>{g[e.nome]=(g[e.nome]||0)+e.valor;});
     const sl={};present.forEach(p=>{sl[p]=(g[p]||0)-(parseFloat(gastos[p])||0);});
@@ -994,7 +998,7 @@ function PageNova({players,onSave}){
                   </select>
                   <button
                     style={{...nb.btn((bountys[p]||"").includes('|')?"#7C6FF7":"#e5e5e5"),padding:"4px 8px",fontSize:12,minWidth:28}}
-                    onClick={()=>{setBountys(prev=>{const nx={...prev};const cur=nx[p]||"";if(cur.includes('|')){const first=cur.split('|')[0];if(first)nx[p]=first;else delete nx[p];}else if(cur){nx[p]=cur+'|';}return nx;});}}
+                    onClick={()=>{setBountys(prev=>{const nx={...prev};const cur=nx[p]||"";if(cur.includes('|')){const f=cur.split('|')[0];if(f)nx[p]=f;else delete nx[p];}else if(cur){nx[p]=cur+'|';}return nx;});}}
                     title="Dividir bounty R$5 cada"
                   >÷</button>
                 </div>
@@ -1684,6 +1688,92 @@ function PageCuia(){
   </div>);
 }
 
+// ── PAGE: BACKUP ────────────────────────────────────────────
+function PageBackup({data,onRestore}){
+  const [txt,setTxt]=useState("");
+  const [msg,setMsg]=useState(null);
+  const [confirmar,setConfirmar]=useState(false);
+  const json=JSON.stringify(data,null,2);
+
+  const baixar=()=>{
+    const blob=new Blob([json],{type:"application/json"});
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob);
+    a.download=`poker-bullying-backup-${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    setMsg({tipo:"ok",txt:"Backup baixado!"});setTimeout(()=>setMsg(null),3000);
+  };
+  const copiar=()=>{
+    const el=document.createElement("textarea");el.value=json;el.style.position="fixed";el.style.opacity="0";
+    document.body.appendChild(el);el.select();
+    try{document.execCommand("copy");setMsg({tipo:"ok",txt:"Copiado para a área de transferência!"});}
+    catch{setMsg({tipo:"erro",txt:"Falha ao copiar."});}
+    document.body.removeChild(el);setTimeout(()=>setMsg(null),3000);
+  };
+  const restaurar=()=>{
+    try{
+      const parsed=JSON.parse(txt);
+      if(!parsed.sessions||!Array.isArray(parsed.sessions))throw new Error("JSON sem campo 'sessions'");
+      onRestore(parsed);
+      setMsg({tipo:"ok",txt:`Restaurado! ${parsed.sessions.length} partidas.`});
+      setTxt("");setConfirmar(false);
+    }catch(e){setMsg({tipo:"erro",txt:"JSON inválido: "+e.message});}
+    setTimeout(()=>setMsg(null),5000);
+  };
+
+  return(<div>
+    <div style={{marginBottom:20}}>
+      <div style={nb.title}>💾 Backup</div>
+      <div style={nb.sub}>Exportar e restaurar dados</div>
+    </div>
+
+    <div style={{...nb.cardSm("#FBBF24"),marginBottom:16}}>
+      <div style={{fontSize:12,fontWeight:900,marginBottom:4}}>⚠️ Baixe um backup toda semana</div>
+      <div style={{fontSize:11,fontWeight:700}}>Guarde o arquivo. Se algo der errado, você restaura em segundos.</div>
+    </div>
+
+    <div style={{...nb.card(),marginBottom:12}}>
+      <div style={{...nb.label,marginBottom:10}}>Estado atual</div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
+        <span style={nb.tag("#7C6FF7")}>{(data.sessions||[]).length} partidas</span>
+        <span style={nb.tag("#4FC9A4")}>{(data.players||[]).length} jogadores</span>
+        <span style={nb.tag("#FBBF24")}>Pote: {fmt(data.poteFinal||0)}</span>
+        <span style={nb.tag("#e5e5e5")}>Temporada {data.temporada}</span>
+      </div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <button style={nb.btn("#4FC9A4")} onClick={baixar}>⬇ Baixar backup (.json)</button>
+        <button style={nb.btn("#7C6FF7")} onClick={copiar}>⎘ Copiar JSON</button>
+      </div>
+    </div>
+
+    <div style={nb.card()}>
+      <div style={{...nb.label,marginBottom:10}}>Restaurar de um backup</div>
+      <div style={{fontSize:11,fontWeight:700,color:"#555",marginBottom:10}}>Cole aqui o conteúdo de um arquivo de backup.</div>
+      <textarea
+        style={{...nb.inp,minHeight:120,fontFamily:"monospace",fontSize:10,resize:"vertical"}}
+        placeholder='{"sessions":[...],"players":[...],...}'
+        value={txt}
+        onChange={e=>setTxt(e.target.value)}
+      />
+      {txt.trim()&&(
+        <div style={{marginTop:10}}>
+          {!confirmar
+            ?<button style={nb.btn("#F97B6B")} onClick={()=>setConfirmar(true)}>⚠️ Restaurar (substitui tudo)</button>
+            :<div>
+              <div style={{...nb.tag("#F97B6B"),marginBottom:8,display:"block"}}>Isso vai SUBSTITUIR todos os dados atuais. Tem certeza?</div>
+              <div style={{display:"flex",gap:6}}>
+                <button style={nb.btn()} onClick={()=>setConfirmar(false)}>Cancelar</button>
+                <button style={nb.btn("#F97B6B")} onClick={restaurar}>Sim, restaurar</button>
+              </div>
+            </div>
+          }
+        </div>
+      )}
+      {msg&&<div style={{...nb.tag(msg.tipo==="ok"?"#4FC9A4":"#F97B6B"),marginTop:10,display:"block"}}>{msg.txt}</div>}
+    </div>
+  </div>);
+}
+
 // ── PAGE: NOVA TEMPORADA ───────────────────────────────────
 function PageTemporada({data,standings,poteFinal,onConfirm}){
   const [conf,setConf]=useState(false);const [ano,setAno]=useState(new Date().getFullYear()+1);
@@ -1731,10 +1821,29 @@ function App(){
   const [page,setPage]=useState("home");
   const [data,setData]=useState(null);
   const [loading,setLoading]=useState(true);
+  const [loadError,setLoadError]=useState(false);
   const [saving,setSaving]=useState(false);
   const [showLogin,setShowLogin]=useState(false);
 
-  useEffect(()=>{(async()=>{const r=await fbGet();if(r&&r.sessions)setData(r);else{const d=defaultState();setData(d);await fbSet(d);}setLoading(false);})();},[]);
+  useEffect(()=>{(async()=>{
+    let r=await fbGet();
+    // Retry até 3x em caso de falha de rede antes de qualquer decisão
+    for(let i=0;i<3&&r===null;i++){
+      await new Promise(res=>setTimeout(res,1200));
+      r=await fbGet();
+    }
+    if(r===null){
+      // Falhou tudo: NUNCA sobrescrever. Mostra erro.
+      setLoadError(true);setLoading(false);return;
+    }
+    if(r.__empty){
+      // Documento realmente vazio: primeira execução, pode semear
+      const d=defaultState();setData(d);await fbSet(d);
+    }else{
+      setData(r.sessions?r:{...defaultState(),...r});
+    }
+    setLoading(false);
+  })();},[]);
 
   useEffect(()=>{
     if(page!=="timer")return;
@@ -1757,6 +1866,14 @@ function App(){
     });
   };
 
+  if(loadError)return(<div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",flexDirection:"column",gap:16,background:BG,padding:"1.5rem"}}>
+    <div style={{...nb.card("#F97B6B"),maxWidth:380,textAlign:"center"}}>
+      <div style={{fontSize:40,marginBottom:10}}>⚠️</div>
+      <div style={{fontWeight:900,fontSize:16,marginBottom:8,textTransform:"uppercase"}}>Sem conexão</div>
+      <div style={{fontSize:12,fontWeight:700,marginBottom:16,lineHeight:1.6}}>Não foi possível carregar os dados do servidor. Os dados NÃO foram alterados. Verifique sua internet e tente novamente.</div>
+      <button style={{...nb.btnFull("#000"),color:"#F97B6B"}} onClick={()=>window.location.reload()}>↻ Tentar novamente</button>
+    </div>
+  </div>);
   if(loading)return(<div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",flexDirection:"column",gap:16,background:BG}}><div style={{width:40,height:40,border:"3px solid #000",borderTop:"3px solid #7C6FF7",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/><div style={{fontWeight:900,textTransform:"uppercase",letterSpacing:2}}>Carregando...</div></div>);
   if(showLogin)return <Login onLogin={()=>{setMode("admin");setShowLogin(false);}} onBack={()=>setShowLogin(false)}/>;
 
@@ -1772,7 +1889,7 @@ function App(){
     {id:"campeoes",label:"Campeões",icon:"★"},{id:"jogadores",label:"Jogadores",icon:"◍"},
     {id:"auditoria",label:"Auditoria",icon:"◧"},{id:"timer",label:"Timer",icon:"⏱"},
     {id:"cuia",label:"CuIA",icon:"🤖"},
-    ...(isAdmin?[{id:"nova",label:"Nova Partida",icon:"⊕"},{id:"temporada",label:"Nova Temporada",icon:"↺"}]:[]),
+    ...(isAdmin?[{id:"nova",label:"Nova Partida",icon:"⊕"},{id:"backup",label:"Backup",icon:"💾"},{id:"temporada",label:"Nova Temporada",icon:"↺"}]:[]),
   ];
 
   return(<div style={{display:"flex",minHeight:"100vh",background:BG,fontFamily:"'Arial Black',Arial,sans-serif",color:"#000",fontSize:13}}>
@@ -1813,6 +1930,7 @@ function App(){
       {page==="auditoria"&&<PageAuditoria sessions={sessions} players={players}/>}
       {page==="timer"&&<PageTimer timer={data.timer} onUpdate={update}/>}
       {page==="cuia"&&<PageCuia/>}
+      {page==="backup"&&isAdmin&&<PageBackup data={data} onRestore={novo=>{update(()=>novo);}}/>}
       {page==="nova"&&isAdmin&&<PageNova players={players} onSave={sess=>{update(prev=>({...prev,sessions:[...prev.sessions,sess],poteFinal:prev.poteFinal+(sess.poteFinalVal||0)}));setPage("partidas");}}/>}
       {page==="temporada"&&isAdmin&&<PageTemporada data={data} standings={standings} poteFinal={poteFinal} onConfirm={novoState=>{update(()=>novoState);setPage("home");}}/>}
     </main>
